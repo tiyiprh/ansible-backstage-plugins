@@ -11,22 +11,37 @@ const logger = {
   child: () => logger,
 } as never;
 
-async function appWith(index: ContentIndex) {
+async function appWith(
+  index: ContentIndex,
+  httpAuth?: unknown,
+  superuser = true,
+) {
   const app = express();
   app.use(
     await createRouter({
       index,
       logger,
-      // The router no longer reads credentials: every route except
-      // GET /health sits behind the plugin's sign-in barrier (#977), which
-      // these router-level tests bypass on purpose — plugin.test.ts covers
-      // the barrier itself. This stub only satisfies RouterOptions.
-      httpAuth: {
+      userInfo: {
+        getUserInfo: async () => ({ userEntityRef: 'user:default/test' }),
+      } as never,
+      auth: {
+        getPluginRequestToken: async () => ({ token: 'catalog-token' }),
+      } as never,
+      catalogClient: {
+        getEntityByRef: async () => ({
+          metadata: {
+            annotations: { 'aap.platform/is_superuser': String(superuser) },
+          },
+        }),
+      } as never,
+      httpAuth: (httpAuth ?? {
+        // The plugin sign-in barrier is covered in plugin.test.ts; provide
+        // signed-in credentials here for the router's superuser checks.
         credentials: () =>
           Promise.resolve({
             principal: { type: 'user', userEntityRef: 'user:default/test' },
           }),
-      } as never,
+      }) as never,
     }),
   );
   return app;
@@ -75,6 +90,7 @@ function seed(items: Array<Record<string, unknown>>): ContentIndex {
   return index;
 }
 
+<<<<<<< HEAD
 function seedArtifacts(count: number): ContentIndex {
   const index = new ContentIndex([], {
     info: () => {},
@@ -169,6 +185,25 @@ describe('GET /content pagination', () => {
     expect(res.body.items).toHaveLength(10);
     expect(res.body.totalItems).toBe(15);
     expect(res.body.next).toContain('page=2');
+  });
+});
+
+describe('sync authorization', () => {
+  it.each(['/sync', '/registries/reg/sync'])(
+    'denies non-superusers on %s',
+    async path => {
+      const index = seed([]);
+      const refresh = jest.spyOn(index, 'refreshRegistry');
+      const app = await appWith(index, undefined, false);
+      await request(app).post(path).expect(403);
+      expect(refresh).not.toHaveBeenCalled();
+    },
+  );
+
+  it('allows superusers to sync', async () => {
+    const app = await appWith(seed([]));
+    await request(app).post('/sync').expect(200);
+>>>>>>> 8a3e45a9 (fix(content): enforce superuser authorization on sync endpoints)
   });
 });
 
