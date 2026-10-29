@@ -2,6 +2,7 @@ import express from 'express';
 import request from 'supertest';
 import { ContentIndex } from './ContentIndex';
 import { createRouter, RECONCILE_FAILURE_SUMMARY } from './router';
+import { AuthorizeResult } from '@backstage/plugin-permission-common';
 
 const logger = {
   info: () => {},
@@ -15,12 +16,20 @@ async function appWith(
   index: ContentIndex,
   httpAuth?: unknown,
   superuser = true,
+  allowed = true,
 ) {
   const app = express();
   app.use(
     await createRouter({
       index,
       logger,
+      permissions: {
+        authorize: jest
+          .fn()
+          .mockResolvedValue([
+            { result: allowed ? AuthorizeResult.ALLOW : AuthorizeResult.DENY },
+          ]),
+      } as never,
       userInfo: {
         getUserInfo: async () => ({ userEntityRef: 'user:default/test' }),
       } as never,
@@ -46,6 +55,38 @@ async function appWith(
   );
   return app;
 }
+
+it.each([
+  '/registries',
+  '/content',
+  '/content/reg/repo@sha256:abc/contents',
+  '/content/reg/repo@sha256:abc',
+  '/execution-environments',
+  '/execution-environments/reg/repo@sha256:abc/contents',
+  '/execution-environments/reg/repo@sha256:abc',
+  '/collections',
+  '/collections/cisco/ios',
+  '/content-items',
+  '/content-items/cisco.ios.ios_acls',
+  '/plugins',
+  '/plugins/cisco.ios.ios_acls',
+])('denies reads on %s without ansible.content.view', async path => {
+  const app = await appWith(seed([]), undefined, true, false);
+  const response = await request(app).get(path).expect(403);
+  expect(response.body).toEqual({
+    error: 'Forbidden: ansible.content.view permission required',
+  });
+});
+
+it('denies resolution and validation without ansible.content.view', async () => {
+  const app = await appWith(seed([]), undefined, true, false);
+  await request(app)
+    .post('/resolve/requirements')
+    .send({ collections: [] })
+    .expect(403);
+  await request(app).post('/config/validate').send({}).expect(403);
+  await request(app).get('/health').expect(200);
+});
 
 /**
  * Seed the index without touching a registry.
@@ -189,14 +230,16 @@ describe('GET /content pagination', () => {
 });
 
 describe('sync authorization', () => {
-  it.each(['/sync', '/registries/reg/sync'])(
+  it.each(['/sync', '/registries/reg/sync', '/registries/reg/poll'])(
     'denies non-superusers on %s',
     async path => {
       const index = seed([]);
       const refresh = jest.spyOn(index, 'refreshRegistry');
+      const poll = jest.spyOn(index, 'pollRegistry');
       const app = await appWith(index, undefined, false);
       await request(app).post(path).expect(403);
       expect(refresh).not.toHaveBeenCalled();
+      expect(poll).not.toHaveBeenCalled();
     },
   );
 
