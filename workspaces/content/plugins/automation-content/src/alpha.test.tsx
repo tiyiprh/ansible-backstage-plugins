@@ -19,9 +19,6 @@ jest.mock('./components/ExecutionEnvironments/ImagesCatalogPage', () => ({
 jest.mock('./components/ExecutionEnvironments/EECatalogPage', () => ({
   EECatalogPage: () => <h1>Execution Environments</h1>,
 }));
-jest.mock('./components/ContentLandingPage', () => ({
-  ContentLandingPage: () => <h1>Automation content</h1>,
-}));
 jest.mock('./components/CollectionsCatalog/CollectionsCatalogPage', () => ({
   CollectionsCatalogPage: () => <h1>Collections</h1>,
 }));
@@ -30,9 +27,9 @@ jest.mock('./components/CollectionsCatalog/CollectionDetailsPage', () => ({
 }));
 
 it.each([
-  ['/content', 'Automation content'],
+  ['/content', 'Execution Environments'],
   ['/content/ee', 'Execution Environments'],
-  ['/automation-content', 'Automation content'],
+  ['/automation-content', 'Execution Environments'],
   ['/automation-content/execution-environments', 'Execution Environments'],
   ['/automation-content/collections', 'Collections'],
   ['/self-service/collections', 'Collections'],

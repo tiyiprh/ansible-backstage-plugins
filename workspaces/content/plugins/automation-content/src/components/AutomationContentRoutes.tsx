@@ -1,6 +1,5 @@
 import type { ReactElement } from 'react';
-import { Route, Routes } from 'react-router-dom';
-import { ContentLandingPage } from './ContentLandingPage';
+import { Navigate, Route, Routes } from 'react-router-dom';
 import { EERoutesPage } from './ExecutionEnvironments/EERoutesPage';
 import { CollectionsRoutesPage } from './CollectionsCatalog/CollectionsRoutesPage';
 
@@ -8,7 +7,7 @@ import { CollectionsRoutesPage } from './CollectionsCatalog/CollectionsRoutesPag
 export function AutomationContentRoutes(): ReactElement {
   return (
     <Routes>
-      <Route index element={<ContentLandingPage />} />
+      <Route index element={<Navigate to="/content/ee" replace />} />
       <Route path="execution-environments/*" element={<EERoutesPage />} />
       <Route path="collections/*" element={<CollectionsRoutesPage />} />
     </Routes>

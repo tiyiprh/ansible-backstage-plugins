@@ -45,7 +45,6 @@ import { AnsiblePage } from '@ansible/plugin-backstage-rhaap';
 // the same page is mounted by `dynamicRoutes` config instead — see the plugin's
 // routes.ts.
 import {
-  AutomationContentPage,
   AutomationContentEEPage,
   AutomationContentCollectionsPage,
 } from '@ansible/plugin-automation-content';
@@ -150,7 +149,7 @@ const routes = (
     <Route path="/settings" element={<UserSettingsPage />} />
     <Route path="/catalog-graph" element={<CatalogGraphPage />} />
     <Route path="/ansible" element={<AnsiblePage />} />
-    <Route path="/content" element={<AutomationContentPage />} />
+    <Route path="/content" element={<Navigate to="/content/ee" replace />} />
     <Route path="/content/ee" element={<AutomationContentEEPage />} />
     <Route
       path="/content/collections"
@@ -158,7 +157,7 @@ const routes = (
     />
     <Route
       path="/automation-content"
-      element={<Navigate to="/content" replace />}
+      element={<Navigate to="/content/ee" replace />}
     />
     <Route
       path="/automation-content/execution-environments"

@@ -32,7 +32,7 @@ import {
   ContentApiError,
   type ArtifactContents,
 } from '../../api';
-import { collectionsRouteRef, eeRouteRef, rootRouteRef } from '../../routes';
+import { collectionsRouteRef, eeRouteRef } from '../../routes';
 import { EmptyState, StarIcon } from '../common';
 import { BreadcrumbsNavigation } from '../common/BreadcrumbsNavigation';
 import { ContentItemsTable } from './ContentItemsTable';
@@ -88,7 +88,6 @@ export function EEDetailsPage(): ReactElement {
   );
   const base = useRouteRef(eeRouteRef)();
   const collectionsBase = useRouteRef(collectionsRouteRef)();
-  const home = useRouteRef(rootRouteRef)();
   const [params, setParams] = useSearchParams();
   const selected = ['overview', 'collections', 'content'].includes(
     params.get('tab') ?? '',
@@ -203,7 +202,6 @@ export function EEDetailsPage(): ReactElement {
       <Flex direction="column" gap="4">
         <BreadcrumbsNavigation
           items={[
-            { label: 'Automation content', href: home },
             { label: 'Execution environments', href: base },
             { label: value?.repository ?? ref },
           ]}

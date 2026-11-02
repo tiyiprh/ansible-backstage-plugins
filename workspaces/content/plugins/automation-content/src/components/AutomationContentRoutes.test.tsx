@@ -1,6 +1,7 @@
 import { screen } from '@testing-library/react';
 import { Route, Routes } from 'react-router-dom';
 import { AutomationContentRoutes } from './AutomationContentRoutes';
+import { EERoutesPage } from './ExecutionEnvironments/EERoutesPage';
 import {
   renderInTestApp,
   TestApiProvider,
@@ -13,9 +14,6 @@ jest.mock('@backstage/core-plugin-api', () => ({
   useRouteRef: () => () => '/content/ee',
 }));
 
-jest.mock('./ContentLandingPage', () => ({
-  ContentLandingPage: () => <div>Content landing</div>,
-}));
 jest.mock('./ExecutionEnvironments/ImagesCatalogPage', () => ({
   ImagesCatalogPage: () => <div>Image catalog</div>,
 }));
@@ -37,7 +35,7 @@ jest.mock('./CollectionsCatalog/CollectionDetailsPage', () => ({
 }));
 
 it.each([
-  ['', 'Content landing'],
+  ['', 'Image catalog'],
   ['/execution-environments', 'Image catalog'],
   ['/execution-environments/catalog', 'Definition files catalog'],
   ['/execution-environments/create', 'Create templates'],
@@ -48,6 +46,7 @@ it.each([
   await renderInTestApp(
     <TestApiProvider apis={[[permissionApiRef, mockApis.permission()]]}>
       <Routes>
+        <Route path="/content/ee/*" element={<EERoutesPage />} />
         <Route
           path="/automation-content/*"
           element={<AutomationContentRoutes />}

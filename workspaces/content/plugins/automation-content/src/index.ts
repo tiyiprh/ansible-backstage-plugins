@@ -4,7 +4,6 @@ export {
   AutomationContentEEPage,
   AutomationContentCollectionsPage,
 } from './plugin';
-export { AutomationContentSidebarItem } from './components/LegacyContentNavigation';
 export { automationContentApiRef, AutomationContentClient } from './api';
 export type {
   AutomationContentApi,

@@ -17,6 +17,7 @@ import {
   useIsSuperuser,
 } from '@ansible/portal-plugin-sdk';
 import { ImageSyncDialog } from './catalog/ImageSyncDialog';
+import { RegistrySyncButton } from './RegistrySyncButton';
 import { useRouteRef } from '@backstage/core-plugin-api';
 import { eeRouteRef } from '../../routes';
 import { CreateContent } from './CreateContent';
@@ -57,17 +58,25 @@ function EETabs({ view }: { view: EECatalogView }): ReactElement {
           description="Browse and manage execution environment images and definition files, or create a new EE definition for your automation workflows."
           tooltip="Execution environment images and definition files available to the portal."
           actions={
-            isSuperuser ? (
-              <Flex align="center" gap="2">
-                <Button
-                  variant="secondary"
-                  iconStart={<SyncIcon />}
-                  onPress={() => setSyncDialogOpen(true)}
-                >
-                  Sync Now
-                </Button>
-              </Flex>
-            ) : undefined
+            <>
+              {view === 'images' && (
+                <RegistrySyncButton
+                  onStatus={setSyncStatus}
+                  onSynced={() => setSyncVersion(version => version + 1)}
+                />
+              )}
+              {view !== 'images' && isSuperuser && (
+                <Flex align="center" gap="2">
+                  <Button
+                    variant="secondary"
+                    iconStart={<SyncIcon />}
+                    onPress={() => setSyncDialogOpen(true)}
+                  >
+                    Sync Now
+                  </Button>
+                </Flex>
+              )}
+            </>
           }
           status={syncStatus}
         />

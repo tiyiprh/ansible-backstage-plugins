@@ -41,14 +41,6 @@ Three data sources, in priority order:
 
 ## Page contracts
 
-### Landing (`/automation-content`)
-
-| Section                                                                                | Source                                                                 |
-| -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| Registry health cards (name, url, `lastReconcileOk`, `lastReconciledAt`, capabilities) | `listRegistries()`                                                     |
-| Counts (EEs, collections, content items)                                               | `listExecutionEnvironments()`, `listCollections()`                     |
-| Sync action (admin)                                                                    | `syncAll()` with per-registry results surfaced as portal notifications |
-
 ### EE catalog (`/content/ee`)
 
 Mounted at the content workspace's own endpoint per the 2026-11-02 sync
@@ -56,6 +48,10 @@ decision endorsed by Ganesh. The content workspace owns the discovery view;
 portal-scaffolder is untouched, and its legacy pages coexist unconfigured.
 The old native path `/automation-content/execution-environments` redirects here;
 the legacy host continues to mount the catalog at that old path.
+`/content` and `/automation-content` redirect to `/content/ee`; there is no
+separate content landing page or Content navigation item.
+The EE catalog header owns the admin Sync action (`syncAll()`), with
+per-registry results surfaced as portal notifications.
 
 Tina's `ImagesCatalogPage` layout, artifact data:
 

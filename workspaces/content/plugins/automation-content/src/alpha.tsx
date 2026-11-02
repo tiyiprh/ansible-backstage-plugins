@@ -10,11 +10,9 @@ import {
 } from '@backstage/core-compat-api';
 import { automationContentApiFactory } from './apis';
 import { Navigate } from 'react-router-dom';
-import LibraryBooksIcon from '@material-ui/icons/LibraryBooks';
 import BuildIcon from '@material-ui/icons/Build';
 import ExtensionIcon from '@material-ui/icons/Extension';
 import {
-  rootRouteRef,
   eeRouteRef,
   eeDetailsRouteRef,
   collectionsRouteRef,
@@ -26,7 +24,6 @@ export const automationContentPlugin: FrontendPlugin = createFrontendPlugin({
   pluginId: 'automation-content',
   title: 'Automation content',
   routes: {
-    root: convertLegacyRouteRef(rootRouteRef),
     ee: convertLegacyRouteRef(eeRouteRef),
     eeDetails: convertLegacyRouteRef(eeDetailsRouteRef),
     collections: convertLegacyRouteRef(collectionsRouteRef),
@@ -38,19 +35,11 @@ export const automationContentPlugin: FrontendPlugin = createFrontendPlugin({
       params: define => define(automationContentApiFactory),
     }),
     PageBlueprint.make({
-      name: 'root',
+      name: 'content-redirect',
       params: {
         path: '/content',
-        title: 'Automation content',
-        icon: <LibraryBooksIcon />,
-        noHeader: true,
-        routeRef: convertLegacyRouteRef(rootRouteRef),
-        loader: async () => {
-          const { ContentLandingPage } = await import(
-            './components/ContentLandingPage'
-          );
-          return compatWrapper(<ContentLandingPage />);
-        },
+        loader: async () =>
+          compatWrapper(<Navigate to="/content/ee" replace />),
       },
     }),
     PageBlueprint.make({
@@ -58,7 +47,8 @@ export const automationContentPlugin: FrontendPlugin = createFrontendPlugin({
       params: {
         // Compatibility redirect: the plugin's original mount prefix.
         path: '/automation-content',
-        loader: async () => compatWrapper(<Navigate to="/content" replace />),
+        loader: async () =>
+          compatWrapper(<Navigate to="/content/ee" replace />),
       },
     }),
     PageBlueprint.make({
