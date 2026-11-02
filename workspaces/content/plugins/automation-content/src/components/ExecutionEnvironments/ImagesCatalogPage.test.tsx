@@ -319,10 +319,10 @@ it('labels partial counts and unknown contents without requiring catalog matches
   expect(
     await screen.findByText('Approximate: 2 collections / 3 plugins'),
   ).toBeTruthy();
-  expect(screen.getAllByText('Contents unknown')).toHaveLength(2);
-  expect(screen.getByText('partial')).toBeTruthy();
-  expect(screen.queryByText('unknown')).toBeNull();
-  expect(screen.getAllByText('labels')).toHaveLength(2);
+  // The fidelity column is gone; the Contents cell alone carries the label.
+  expect(screen.getAllByText('Contents unknown')).toHaveLength(1);
+  // The enumeration source ('labels') no longer renders with the fidelity
+  // column gone; the Contents summary alone carries the nuance.
   expect(screen.queryByRole('button', { name: /to favorites/ })).toBeNull();
   expect(
     screen.getAllByRole('link', { name: 'repo' })[0].getAttribute('href'),

@@ -40,6 +40,8 @@ export interface ExecutionEnvironment {
   enumeration: Enumeration;
   /** When the registry this came from was last successfully read. */
   lastReconciledAt?: string;
+  /** Whether that last read succeeded — drives the row's sync state. */
+  lastReconcileOk?: boolean;
   counts?: ContentCounts;
   collections: Array<{
     namespace: string;

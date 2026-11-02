@@ -131,9 +131,11 @@ function artifactView(index: ContentIndex, artifact: IndexedArtifact) {
     // Why this was or was not recognised, so an operator never has to guess.
     classification: artifact.classification,
     enumeration: enumerationOf(artifact),
-    // When the registry was last successfully read. The catalog is a cache over state
-    // the registry owns, so how fresh it is matters.
+    // When the registry was last successfully read, and whether that read
+    // succeeded. The catalog is a cache over state the registry owns, so how
+    // fresh it is matters; the ok flag drives the row's sync state.
     lastReconciledAt: index.reconcileStateFor(artifact.registry)?.at,
+    lastReconcileOk: index.reconcileStateFor(artifact.registry)?.ok,
     counts: index.countsFor(artifact),
     collections: (artifact.manifest?.collections ?? []).map(c => ({
       namespace: c.namespace,

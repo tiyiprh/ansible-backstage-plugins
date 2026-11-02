@@ -8,7 +8,6 @@ import {
   useStarredEntities,
 } from '@backstage/plugin-catalog-react';
 import {
-  Badge,
   Button,
   Cell,
   CellText,
@@ -134,6 +133,16 @@ export function ImagesCatalogPage({
     // Search and favorites filter the fetched page, not the whole inventory.
     paginationOptions: { type: 'none' },
   });
+  /** Row sync state, derived from the owning registry's last read. */
+  const syncStateLabel = (
+    lastReconciledAt?: string,
+    lastReconcileOk?: boolean,
+  ): string => {
+    if (!lastReconciledAt) return 'Pending';
+    if (lastReconcileOk === false) return 'Sync failed';
+    return 'Synced';
+  };
+
   const columns: ColumnConfig<ImageRow>[] = [
     {
       id: 'image',
@@ -149,7 +158,12 @@ export function ImagesCatalogPage({
     {
       id: 'source',
       label: 'Source',
-      cell: row => <CellText title={row.registry} />,
+      cell: row => (
+        // Ran/Tina combination: the actual source name with its type beneath.
+        // Definition-file artifacts — when that integration exists — render
+        // only "Definition file", with no registry name above them.
+        <CellText title={row.registry} description="external registry" />
+      ),
     },
     {
       id: 'tags',
@@ -167,37 +181,22 @@ export function ImagesCatalogPage({
       cell: row => <CellText title={imageContentsSummary(row)} />,
     },
     {
-      id: 'fidelity',
-      label: 'Inventory fidelity',
-      cell: row => (
-        <Cell>
-          <Flex direction="column" gap="1">
-            <Badge>
-              {row.contentsKnown ? row.enumeration.status : 'Contents unknown'}
-            </Badge>
-            <Text>{row.enumeration.source}</Text>
-          </Flex>
-        </Cell>
-      ),
-    },
-    {
-      id: 'classification',
-      label: 'Classification',
+      id: 'state',
+      label: 'State',
       cell: row => (
         <CellText
-          title={row.classification?.type ?? 'Unknown'}
-          description={row.classification?.confidence}
+          title={syncStateLabel(row.lastReconciledAt, row.lastReconcileOk)}
         />
       ),
     },
     {
-      id: 'freshness',
-      label: 'Last reconciled',
+      id: 'last-synced',
+      label: 'Last synced',
       cell: row => <CellText title={relativeTime(row.lastReconciledAt)} />,
     },
     {
       id: 'favourite',
-      label: 'Favorite',
+      label: 'Actions',
       cell: row => {
         const entity = entityByImageRef.get(row.ref);
         return (
