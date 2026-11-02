@@ -150,14 +150,23 @@ const routes = (
     <Route path="/settings" element={<UserSettingsPage />} />
     <Route path="/catalog-graph" element={<CatalogGraphPage />} />
     <Route path="/ansible" element={<AnsiblePage />} />
-    <Route path="/automation-content" element={<AutomationContentPage />} />
+    <Route path="/content" element={<AutomationContentPage />} />
+    <Route path="/content/ee" element={<AutomationContentEEPage />} />
+    <Route
+      path="/content/collections"
+      element={<AutomationContentCollectionsPage />}
+    />
+    <Route
+      path="/automation-content"
+      element={<Navigate to="/content" replace />}
+    />
     <Route
       path="/automation-content/execution-environments"
-      element={<AutomationContentEEPage />}
+      element={<Navigate to="/content/ee" replace />}
     />
     <Route
       path="/automation-content/collections"
-      element={<AutomationContentCollectionsPage />}
+      element={<Navigate to="/content/collections" replace />}
     />
     <Route path="/self-service" element={<SelfServicePage />} />
   </FlatRoutes>

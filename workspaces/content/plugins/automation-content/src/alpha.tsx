@@ -40,7 +40,7 @@ export const automationContentPlugin: FrontendPlugin = createFrontendPlugin({
     PageBlueprint.make({
       name: 'root',
       params: {
-        path: '/automation-content',
+        path: '/content',
         title: 'Automation content',
         icon: <LibraryBooksIcon />,
         noHeader: true,
@@ -51,6 +51,14 @@ export const automationContentPlugin: FrontendPlugin = createFrontendPlugin({
           );
           return compatWrapper(<ContentLandingPage />);
         },
+      },
+    }),
+    PageBlueprint.make({
+      name: 'root-redirect',
+      params: {
+        // Compatibility redirect: the plugin's original mount prefix.
+        path: '/automation-content',
+        loader: async () => compatWrapper(<Navigate to="/content" replace />),
       },
     }),
     PageBlueprint.make({

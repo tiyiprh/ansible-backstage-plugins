@@ -10,11 +10,5 @@ export function AutomationContentSidebarItem(): ReactElement | null {
     permission: automationContentViewPermission,
   });
   if (!allowed) return null;
-  return (
-    <SidebarItem
-      icon={LibraryBooksIcon}
-      to="automation-content"
-      text="Content"
-    />
-  );
+  return <SidebarItem icon={LibraryBooksIcon} to="/content" text="Content" />;
 }

@@ -8,7 +8,7 @@ import { EEDetailsPage } from './EEDetailsPage';
 
 jest.mock('@backstage/core-plugin-api', () => ({
   ...jest.requireActual('@backstage/core-plugin-api'),
-  useRouteRef: () => () => '/automation-content',
+  useRouteRef: () => () => '/content',
 }));
 const toggleStarredEntity = jest.fn();
 jest.mock('@backstage/plugin-catalog-react', () => ({
