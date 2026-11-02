@@ -32,8 +32,8 @@ it.each([
   ['/automation-content', 'Execution Environments'],
   ['/automation-content/execution-environments', 'Execution Environments'],
   ['/automation-content/collections', 'Collections'],
-  ['/self-service/collections', 'Collections'],
-  ['/self-service/collections/ns/name_with.dots', 'Collection details'],
+  ['/content/collections', 'Collections'],
+  ['/content/collections/ns/name_with.dots', 'Collection details'],
 ])('discovers the native page at %s', async (path, text) => {
   await renderTestApp({ features: [plugin], initialRouteEntries: [path] });
   expect(await screen.findByText(text, {}, { timeout: 10000 })).toBeTruthy();

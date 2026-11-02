@@ -87,10 +87,11 @@ this plugin. Tina's prototype is the authoritative design. A different
 team (or this one, later) populates the definition data; the views ship
 now.
 
-### Collections catalog (`/self-service/collections`)
+### Collections catalog (`/content/collections`)
 
-Provisionally mounted at the self-service endpoint per the 2026-10-30 sync
-decision, pending Abhinav's Create/Definition-files coordination. The old native path
+Mounted at the content-workspace path per the 2026-11-02 direction: the content
+workspace owns the collections view, and portal-scaffolder's legacy page
+coexists unconfigured. The old native path
 `/automation-content/collections` redirects here; the legacy host continues to
 mount the catalog at that old path.
 
@@ -106,7 +107,7 @@ Tina's `CollectionsListPage` / `CollectionsCatalogPage` layout, artifact data:
 | Search             | `listCollections(query)` server-side where supported, plus client-side grouping                                                                       |
 | Row action         | navigate to collection details                                                                                                                        |
 
-### Collection details (`/self-service/collections/…`)
+### Collection details (`/content/collections/…`)
 
 | Section  | Content                                                                                                             |
 | -------- | ------------------------------------------------------------------------------------------------------------------- |

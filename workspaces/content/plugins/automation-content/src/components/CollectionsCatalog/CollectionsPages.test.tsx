@@ -12,7 +12,7 @@ import { CollectionDetailsPage } from './CollectionDetailsPage';
 
 jest.mock('@backstage/core-plugin-api', () => ({
   ...jest.requireActual('@backstage/core-plugin-api'),
-  useRouteRef: () => () => '/self-service/collections',
+  useRouteRef: () => () => '/content/collections',
 }));
 jest.mock('../ContentItemDocumentation', () => ({
   ContentItemDocumentation: ({

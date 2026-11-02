@@ -80,9 +80,10 @@ export const automationContentPlugin: FrontendPlugin = createFrontendPlugin({
     PageBlueprint.make({
       name: 'collections',
       params: {
-        // Provisional self-service mount per the 2026-10-30 sync decision,
-        // pending the Ganesh workspace-permissions consult.
-        path: '/self-service/collections',
+        // Content-workspace mount per the 2026-11-02 direction: the content
+        // workspace owns the collections view at its own path, and
+        // portal-scaffolder's legacy page coexists unconfigured.
+        path: '/content/collections',
         title: 'Collections',
         icon: <ExtensionIcon />,
         noHeader: true,
@@ -100,13 +101,13 @@ export const automationContentPlugin: FrontendPlugin = createFrontendPlugin({
       params: {
         path: '/automation-content/collections',
         loader: async () =>
-          compatWrapper(<Navigate to="/self-service/collections" replace />),
+          compatWrapper(<Navigate to="/content/collections" replace />),
       },
     }),
     PageBlueprint.make({
       name: 'collection-details',
       params: {
-        path: '/self-service/collections/:namespace/:name',
+        path: '/content/collections/:namespace/:name',
         title: 'Collection details',
         noHeader: true,
         loader: async () => {
