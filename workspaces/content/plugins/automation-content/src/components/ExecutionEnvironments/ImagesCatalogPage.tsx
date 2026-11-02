@@ -192,7 +192,9 @@ export function ImagesCatalogPage({
       >
         <Text as="h2" variant="title-medium">
           Execution Environments images
-          {images.value ? ` (${images.value.totalItems})` : ''}
+          {images.value
+            ? ` (${images.value.totalItems ?? images.value.items.length})`
+            : ''}
         </Text>
         <SearchField
           label="Search images"
@@ -238,9 +240,14 @@ export function ImagesCatalogPage({
               pageSize: 10,
               pageSizeOptions: [],
               offset: ((images.value?.page ?? page) - 1) * 10,
-              totalCount: images.value?.totalItems ?? 0,
+              // Older backends (pre-#1023) return no envelope; fall back to the page's
+              // own length so the total is honest, if partial, against them.
+              totalCount:
+                images.value?.totalItems ?? images.value?.items.length ?? 0,
               hasNextPage:
-                !images.loading && page * 10 < (images.value?.totalItems ?? 0),
+                !images.loading &&
+                page * 10 <
+                  (images.value?.totalItems ?? images.value?.items.length ?? 0),
               hasPreviousPage: !images.loading && page > 1,
               onNextPage: () => setPage(current => current + 1),
               onPreviousPage: () => setPage(current => current - 1),
