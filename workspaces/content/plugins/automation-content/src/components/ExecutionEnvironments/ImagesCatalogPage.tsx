@@ -57,7 +57,6 @@ export function ImagesCatalogPage({
   const [allTypes, setAllTypes] = useState(false);
   const [source, setSource] = useState('all');
   const [tag, setTag] = useState('all');
-  const [owner, setOwner] = useState('all');
   const [page, setPage] = useState(1);
   const images = useAsyncRetry(
     () => api.listExecutionEnvironments({ allTypes, page }),
@@ -95,30 +94,17 @@ export function ImagesCatalogPage({
         : [],
     [allTypes, data],
   );
-  const owners = useMemo(
-    () =>
-      [
-        ...new Set(
-          [...entityByImageRef.values()].map(entity => entity.metadata.name),
-        ),
-      ]
-        .filter((name): name is string => Boolean(name))
-        .sort(),
-    [entityByImageRef],
-  );
 
   // These facets filter only the currently fetched page; server-side filtering is not available yet.
   const filteredData = useMemo(
     () =>
       (data ?? []).filter(image => {
-        const entity = entityByImageRef.get(image.ref);
         return (
           (source === 'all' || image.registry === source) &&
-          (tag === 'all' || image.tags.includes(tag)) &&
-          (owner === 'all' || entity?.metadata.name === owner)
+          (tag === 'all' || image.tags.includes(tag))
         );
       }),
-    [data, entityByImageRef, owner, source, tag],
+    [data, source, tag],
   );
 
   const table = useTable<ImageRow>({
@@ -164,13 +150,6 @@ export function ImagesCatalogPage({
       id: 'source',
       label: 'Source',
       cell: row => <CellText title={row.registry} />,
-    },
-    {
-      id: 'owner',
-      label: 'Owner',
-      cell: row => (
-        <CellText title={entityByImageRef.get(row.ref)?.metadata.name ?? '—'} />
-      ),
     },
     {
       id: 'tags',
@@ -277,16 +256,6 @@ export function ImagesCatalogPage({
                 ...tags.map(value => ({ value, label: value })),
               ]}
             />
-            <Select
-              aria-label="Filter by owner"
-              size="small"
-              value={owner}
-              onChange={value => setOwner(String(value))}
-              options={[
-                { value: 'all', label: 'All owners' },
-                ...owners.map(value => ({ value, label: value })),
-              ]}
-            />
             <Checkbox isSelected={starredOnly} onChange={setStarredOnly}>
               Favorites only
             </Checkbox>
@@ -316,10 +285,7 @@ export function ImagesCatalogPage({
           </div>
         )}
         {entities.error && (
-          <Text>
-            Catalog links are unavailable. Favorites and owner details may be
-            missing.
-          </Text>
+          <Text>Catalog links are unavailable. Favorites may be missing.</Text>
         )}
         {!images.loading && !images.error && images.value && (
           <Text aria-live="polite">{data?.length ?? 0} images loaded</Text>
@@ -371,7 +337,6 @@ export function ImagesCatalogPage({
                           setStarredOnly(false);
                           setSource('all');
                           setTag('all');
-                          setOwner('all');
                         }}
                       >
                         Clear filters

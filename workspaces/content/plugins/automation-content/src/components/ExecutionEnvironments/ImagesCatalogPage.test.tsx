@@ -199,7 +199,7 @@ it('keeps favorites filtering on the current page', async () => {
   expect(await screen.findByRole('link', { name: 'repo' })).toBeTruthy();
 });
 
-it('renders source, tag, and owner facets with the linked owner column', async () => {
+it('renders source and tag facets without an owner facet or column', async () => {
   const second: ExecutionEnvironment = {
     ...base,
     ref: 'other/second@sha256:two',
@@ -216,18 +216,6 @@ it('renders source, tag, and owner facets with the linked owner column', async (
     digest: 'sha256:three',
     tags: ['orphan'],
   };
-  const secondOwner = {
-    ...linkedEntity,
-    metadata: {
-      ...linkedEntity.metadata,
-      name: 'platform-team',
-      annotations: {
-        'ansible.com/registry': 'other',
-        'ansible.com/repository': 'second',
-        'ansible.com/digest': 'sha256:two',
-      },
-    },
-  };
   const { container } = render(
     <TestApiProvider
       apis={[
@@ -240,7 +228,7 @@ it('renders source, tag, and owner facets with the linked owner column', async (
         ],
         [
           catalogApiRef,
-          { getEntities: async () => ({ items: [linkedEntity, secondOwner] }) },
+          { getEntities: async () => ({ items: [linkedEntity] }) },
         ],
       ]}
     >
@@ -250,17 +238,10 @@ it('renders source, tag, and owner facets with the linked owner column', async (
 
   expect(await screen.findByRole('link', { name: 'repo' })).toBeTruthy();
   expect(screen.getByRole('columnheader', { name: 'Source' })).toBeTruthy();
-  expect(screen.getByRole('columnheader', { name: 'Owner' })).toBeTruthy();
-  await waitFor(() =>
-    expect(
-      screen.getByRole('gridcell', { name: 'automation-team' }),
-    ).toBeTruthy(),
-  );
-  expect(screen.getByRole('gridcell', { name: 'platform-team' })).toBeTruthy();
-  expect(screen.getByRole('gridcell', { name: '—' })).toBeTruthy();
   expect(screen.getByRole('button', { name: /Filter by source/ })).toBeTruthy();
   expect(screen.getByRole('button', { name: /Filter by tag/ })).toBeTruthy();
-  expect(screen.getByRole('button', { name: /Filter by owner/ })).toBeTruthy();
+  expect(screen.queryByRole('columnheader', { name: 'Owner' })).toBeNull();
+  expect(screen.queryByRole('button', { name: /Filter by owner/ })).toBeNull();
 
   const facets = container.querySelectorAll('select');
   fireEvent.change(facets[0], { target: { value: 'r' } });
@@ -268,12 +249,6 @@ it('renders source, tag, and owner facets with the linked owner column', async (
     expect(screen.queryByRole('link', { name: 'second' })).toBeNull(),
   );
   expect(screen.getByRole('link', { name: 'repo' })).toBeTruthy();
-
-  fireEvent.change(facets[2], { target: { value: 'automation-team' } });
-  expect(
-    screen.getByRole('gridcell', { name: 'automation-team' }),
-  ).toBeTruthy();
-  expect(screen.queryByRole('link', { name: 'second' })).toBeNull();
 });
 
 it('enables tag filtering only for all images and filters tags on the current page', async () => {
