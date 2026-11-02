@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { TestApiProvider } from '@backstage/test-utils';
 import { catalogApiRef } from '@backstage/plugin-catalog-react';
@@ -28,6 +28,19 @@ const base: ExecutionEnvironment = {
   enumeration: { status: 'partial', source: 'labels' },
   counts: { collections: 2, plugins: 3 },
   collections: [],
+};
+
+const linkedEntity = {
+  apiVersion: 'backstage.io/v1alpha1',
+  kind: 'Component',
+  metadata: {
+    name: 'automation-team',
+    annotations: {
+      'ansible.com/registry': 'r',
+      'ansible.com/repository': 'repo',
+      'ansible.com/digest': 'sha256:one',
+    },
+  },
 };
 
 const envelope = (
@@ -184,6 +197,122 @@ it('keeps favorites filtering on the current page', async () => {
   expect(await screen.findByText('No images match your filters')).toBeTruthy();
   await userEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
   expect(await screen.findByRole('link', { name: 'repo' })).toBeTruthy();
+});
+
+it('renders source, tag, and owner facets with the linked owner column', async () => {
+  const second: ExecutionEnvironment = {
+    ...base,
+    ref: 'other/second@sha256:two',
+    registry: 'other',
+    repository: 'second',
+    digest: 'sha256:two',
+    tags: ['stable'],
+  };
+  const unlinked: ExecutionEnvironment = {
+    ...base,
+    ref: 'orphan/orphan@sha256:three',
+    registry: 'orphan',
+    repository: 'orphan',
+    digest: 'sha256:three',
+    tags: ['orphan'],
+  };
+  const secondOwner = {
+    ...linkedEntity,
+    metadata: {
+      ...linkedEntity.metadata,
+      name: 'platform-team',
+      annotations: {
+        'ansible.com/registry': 'other',
+        'ansible.com/repository': 'second',
+        'ansible.com/digest': 'sha256:two',
+      },
+    },
+  };
+  const { container } = render(
+    <TestApiProvider
+      apis={[
+        [
+          automationContentApiRef,
+          {
+            listExecutionEnvironments: async () =>
+              envelope([base, second, unlinked]),
+          },
+        ],
+        [
+          catalogApiRef,
+          { getEntities: async () => ({ items: [linkedEntity, secondOwner] }) },
+        ],
+      ]}
+    >
+      <ImagesCatalogPage />
+    </TestApiProvider>,
+  );
+
+  expect(await screen.findByRole('link', { name: 'repo' })).toBeTruthy();
+  expect(screen.getByRole('columnheader', { name: 'Source' })).toBeTruthy();
+  expect(screen.getByRole('columnheader', { name: 'Owner' })).toBeTruthy();
+  await waitFor(() =>
+    expect(
+      screen.getByRole('gridcell', { name: 'automation-team' }),
+    ).toBeTruthy(),
+  );
+  expect(screen.getByRole('gridcell', { name: 'platform-team' })).toBeTruthy();
+  expect(screen.getByRole('gridcell', { name: '—' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: /Filter by source/ })).toBeTruthy();
+  expect(screen.getByRole('button', { name: /Filter by tag/ })).toBeTruthy();
+  expect(screen.getByRole('button', { name: /Filter by owner/ })).toBeTruthy();
+
+  const facets = container.querySelectorAll('select');
+  fireEvent.change(facets[0], { target: { value: 'r' } });
+  await waitFor(() =>
+    expect(screen.queryByRole('link', { name: 'second' })).toBeNull(),
+  );
+  expect(screen.getByRole('link', { name: 'repo' })).toBeTruthy();
+
+  fireEvent.change(facets[2], { target: { value: 'automation-team' } });
+  expect(
+    screen.getByRole('gridcell', { name: 'automation-team' }),
+  ).toBeTruthy();
+  expect(screen.queryByRole('link', { name: 'second' })).toBeNull();
+});
+
+it('enables tag filtering only for all images and filters tags on the current page', async () => {
+  const second: ExecutionEnvironment = {
+    ...base,
+    ref: 'r/other@sha256:two',
+    repository: 'other',
+    digest: 'sha256:two',
+    tags: ['stable'],
+  };
+  const listExecutionEnvironments = jest.fn(async () =>
+    envelope([base, second]),
+  );
+  const { container } = render(
+    <TestApiProvider
+      apis={[
+        [automationContentApiRef, { listExecutionEnvironments }],
+        [catalogApiRef, { getEntities: async () => ({ items: [] }) }],
+      ]}
+    >
+      <ImagesCatalogPage />
+    </TestApiProvider>,
+  );
+
+  await screen.findByRole('link', { name: 'repo' });
+  const tagFacet = screen.getByRole('button', { name: /Filter by tag/ });
+  expect(tagFacet.hasAttribute('disabled')).toBe(true);
+  await userEvent.click(screen.getByRole('checkbox', { name: /all images/ }));
+  await waitFor(() =>
+    expect(listExecutionEnvironments).toHaveBeenLastCalledWith({
+      allTypes: true,
+      page: 1,
+    }),
+  );
+  expect(tagFacet.hasAttribute('disabled')).toBe(false);
+  const tagSelect = container.querySelectorAll('select')[1];
+  fireEvent.change(tagSelect, { target: { value: 'stable' } });
+  expect(await screen.findByRole('link', { name: 'other' })).toBeTruthy();
+  expect(screen.queryByRole('link', { name: 'repo' })).toBeNull();
 });
 
 it('labels partial counts and unknown contents without requiring catalog matches', async () => {
