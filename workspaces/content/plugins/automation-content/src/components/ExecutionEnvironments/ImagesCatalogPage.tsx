@@ -211,10 +211,9 @@ export function ImagesCatalogPage({
             <MenuTrigger>
               <ButtonIcon
                 variant="tertiary"
+                icon={<MoreVertIcon />}
                 aria-label={`Actions for ${row.repository}`}
-              >
-                <MoreVertIcon />
-              </ButtonIcon>
+              />
               <Menu>
                 {entity && (
                   <MenuItem onAction={() => toggleStarredEntity(entity)}>{`${
