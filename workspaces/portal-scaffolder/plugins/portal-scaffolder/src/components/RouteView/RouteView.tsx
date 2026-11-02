@@ -9,6 +9,7 @@ import {
 } from '@backstage/core-plugin-api';
 import {
   executionEnvironmentsViewPermission,
+  collectionsViewPermission,
   gitRepositoriesViewPermission,
   templatesViewPermission,
   historyViewPermission,
@@ -23,7 +24,10 @@ import { RunTask } from '../RunTask';
 import { FeedbackFooter } from '../feedback/FeedbackFooter';
 import { TaskList } from '../TaskList';
 import { CatalogItemsDetails } from '../CatalogItemDetails';
+import { EETabs } from '../ExecutionEnvironments';
 import { EEDetailsPage } from '../ExecutionEnvironments/catalog/EEDetailsPage';
+import { CollectionsCatalogPage } from '../CollectionsCatalog';
+import { CollectionDetailsPage } from '../CollectionsCatalog/CollectionDetailsPage';
 import { invalidateCollections } from '../CollectionsCatalog/collectionsInvalidation';
 import { GitRepositoriesPage } from '../GitRepositories';
 import { RepositoryDetailsPage } from '../GitRepositories/RepositoryDetailsPage';
@@ -122,11 +126,18 @@ const RouteViewContent = () => {
           />
         </Route>
         <Route
-          path="ee/*"
+          path="ee"
           element={
-            <Navigate to="/automation-content/execution-environments" replace />
+            <RequirePermission permission={executionEnvironmentsViewPermission}>
+              <Outlet />
+            </RequirePermission>
           }
-        />
+        >
+          <Route index element={<Navigate to="catalog" replace />} />
+          <Route path="catalog" element={<EETabs />} />
+          <Route path="create" element={<EETabs />} />
+          <Route path="*" element={<Navigate to="catalog" replace />} />
+        </Route>
         <Route
           path="catalog/:templateName"
           element={
@@ -137,11 +148,19 @@ const RouteViewContent = () => {
         />
         <Route
           path="collections"
-          element={<Navigate to="/automation-content/collections" replace />}
+          element={
+            <RequirePermission permission={collectionsViewPermission}>
+              <CollectionsCatalogPage />
+            </RequirePermission>
+          }
         />
         <Route
           path="collections/:collectionName"
-          element={<Navigate to="/automation-content/collections" replace />}
+          element={
+            <RequirePermission permission={collectionsViewPermission}>
+              <CollectionDetailsPage />
+            </RequirePermission>
+          }
         />
         <Route
           path="repositories"

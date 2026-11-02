@@ -56,9 +56,9 @@ export const automationContentPlugin: FrontendPlugin = createFrontendPlugin({
     PageBlueprint.make({
       name: 'ee',
       params: {
-        // Provisional self-service mount per the 2026-10-30 sync decision,
-        // pending the workspace-permissions consult.
-        path: '/self-service/ee',
+        // Content-workspace mount at /content/ee per the 2026-11-02 sync,
+        // endorsed by Ganesh; portal-scaffolder remains untouched.
+        path: '/content/ee',
         title: 'Execution Environments',
         icon: <BuildIcon />,
         noHeader: true,
@@ -76,7 +76,7 @@ export const automationContentPlugin: FrontendPlugin = createFrontendPlugin({
       params: {
         path: '/automation-content/execution-environments',
         loader: async () =>
-          compatWrapper(<Navigate to="/self-service/ee" replace />),
+          compatWrapper(<Navigate to="/content/ee" replace />),
       },
     }),
     PageBlueprint.make({

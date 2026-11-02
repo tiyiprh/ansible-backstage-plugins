@@ -49,12 +49,13 @@ Three data sources, in priority order:
 | Counts (EEs, collections, content items)                                               | `listExecutionEnvironments()`, `listCollections()`                     |
 | Sync action (admin)                                                                    | `syncAll()` with per-registry results surfaced as portal notifications |
 
-### EE catalog (`/self-service/ee`)
+### EE catalog (`/content/ee`)
 
-Provisionally mounted at the self-service endpoint per the 2026-10-30 sync
-decision, pending the workspace-permissions consult. The old native path
-`/automation-content/execution-environments` redirects here; the legacy host
-continues to mount the catalog at that old path.
+Mounted at the content workspace's own endpoint per the 2026-11-02 sync
+decision endorsed by Ganesh. The content workspace owns the discovery view;
+portal-scaffolder is untouched, and its legacy pages coexist unconfigured.
+The old native path `/automation-content/execution-environments` redirects here;
+the legacy host continues to mount the catalog at that old path.
 
 Tina's `ImagesCatalogPage` layout, artifact data:
 
@@ -70,7 +71,7 @@ Tina's `ImagesCatalogPage` layout, artifact data:
 | Favourites               | catalog stars (matching rules above)                                                                                           |
 | Row action               | navigate to EE details — **no** build, edit, or SCM actions                                                                    |
 
-### EE details (`/self-service/ee/…`)
+### EE details (`/content/ee/…`)
 
 Tina's `EEDetailsPage` tabs, artifact data:
 
@@ -93,7 +94,7 @@ now.
 ### Collections catalog (`/self-service/collections`)
 
 Provisionally mounted at the self-service endpoint per the 2026-10-30 sync
-decision, pending the Ganesh workspace-permissions consult. The old native path
+decision, pending Abhinav's Create/Definition-files coordination. The old native path
 `/automation-content/collections` redirects here; the legacy host continues to
 mount the catalog at that old path.
 

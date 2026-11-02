@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter } from 'react-router-dom';
 import { RouteView } from './RouteView';
 
 // Mock page components
@@ -32,6 +32,16 @@ jest.mock('../ExecutionEnvironments', () => ({
 jest.mock('../ExecutionEnvironments/catalog/EEDetailsPage', () => ({
   EEDetailsPage: () => <div data-testid="ee-details">EEDetails</div>,
 }));
+jest.mock('../CollectionsCatalog', () => ({
+  CollectionsCatalogPage: () => (
+    <div data-testid="collections-catalog">CollectionsCatalog</div>
+  ),
+}));
+jest.mock('../CollectionsCatalog/CollectionDetailsPage', () => ({
+  CollectionDetailsPage: () => (
+    <div data-testid="collection-details">CollectionDetails</div>
+  ),
+}));
 jest.mock('../GitRepositories', () => ({
   GitRepositoriesPage: () => (
     <div data-testid="git-repositories">GitRepositories</div>
@@ -47,6 +57,11 @@ jest.mock('@ansible/aap-common/permissions', () => ({
   executionEnvironmentsViewPermission: {
     type: 'basic',
     name: 'ee.view',
+    attributes: {},
+  },
+  collectionsViewPermission: {
+    type: 'basic',
+    name: 'collections.view',
     attributes: {},
   },
   gitRepositoriesViewPermission: {
@@ -196,9 +211,24 @@ describe('RouteView', () => {
         permissionName: 'history.view',
       },
       {
+        path: '/ee/catalog',
+        childTestId: 'ee-tabs',
+        permissionName: 'ee.view',
+      },
+      {
         path: '/catalog/my-ee',
         childTestId: 'ee-details',
         permissionName: 'ee.view',
+      },
+      {
+        path: '/collections',
+        childTestId: 'collections-catalog',
+        permissionName: 'collections.view',
+      },
+      {
+        path: '/collections/my-col',
+        childTestId: 'collection-details',
+        permissionName: 'collections.view',
       },
       {
         path: '/repositories/catalog',
@@ -238,6 +268,8 @@ describe('RouteView', () => {
     it.each([
       { path: '/catalog', childTestId: 'home' },
       { path: '/create/tasks', childTestId: 'task-list' },
+      { path: '/ee/catalog', childTestId: 'ee-tabs' },
+      { path: '/collections', childTestId: 'collections-catalog' },
       { path: '/repositories/catalog', childTestId: 'git-repositories' },
     ])('blocks $childTestId at $path', ({ path, childTestId }) => {
       render(
@@ -251,58 +283,6 @@ describe('RouteView', () => {
       );
     });
   });
-
-  it.each([
-    '/self-service/ee',
-    '/self-service/ee/catalog',
-    '/self-service/ee/create',
-  ])(
-    'redirects %s to automation content without checking permissions',
-    path => {
-      mockRequirePermission.mockImplementation(() => (
-        <div data-testid="permission-denied" />
-      ));
-      render(
-        <MemoryRouter initialEntries={[path]}>
-          <Routes>
-            <Route path="/self-service/*" element={<RouteView />} />
-            <Route
-              path="/automation-content/execution-environments"
-              element={<div>Automation content EE catalog</div>}
-            />
-          </Routes>
-        </MemoryRouter>,
-      );
-      expect(
-        screen.getByText('Automation content EE catalog'),
-      ).toBeInTheDocument();
-      expect(mockRequirePermission).not.toHaveBeenCalled();
-    },
-  );
-
-  it.each(['/self-service/collections', '/self-service/collections/my-col'])(
-    'redirects %s to automation content without checking permissions',
-    path => {
-      mockRequirePermission.mockImplementation(() => (
-        <div data-testid="permission-denied" />
-      ));
-      render(
-        <MemoryRouter initialEntries={[path]}>
-          <Routes>
-            <Route path="/self-service/*" element={<RouteView />} />
-            <Route
-              path="/automation-content/collections"
-              element={<div>Automation content collections catalog</div>}
-            />
-          </Routes>
-        </MemoryRouter>,
-      );
-      expect(
-        screen.getByText('Automation content collections catalog'),
-      ).toBeInTheDocument();
-      expect(mockRequirePermission).not.toHaveBeenCalled();
-    },
-  );
 
   it('redirects unknown routes to /self-service/catalog', () => {
     render(
