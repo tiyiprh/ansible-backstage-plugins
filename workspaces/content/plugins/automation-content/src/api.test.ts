@@ -36,18 +36,41 @@ it('syncs only the selected registry through authenticated fetch', async () => {
 });
 
 it('lists only classified execution environments by default', async () => {
+  const result = { items: [], page: 1, totalItems: 26, next: '?page=2' };
   const fetch = jest
     .fn()
-    .mockResolvedValue({ ok: true, json: async () => ({ items: [] }) });
+    .mockResolvedValue({ ok: true, json: async () => result });
   const client = new AutomationContentClient({
     discoveryApi: { getBaseUrl: async () => '/backend' },
     fetchApi: { fetch },
   });
-  await client.listExecutionEnvironments();
+  await expect(client.listExecutionEnvironments()).resolves.toEqual(result);
   expect(fetch).toHaveBeenCalledWith(
     '/backend/content?type=execution-environment',
   );
 });
+
+it.each([
+  [false, 2, '/backend/content?type=execution-environment&page=2'],
+  [true, 2, '/backend/content?page=2'],
+  [false, 0, '/backend/content?type=execution-environment&page=0'],
+])(
+  'merges allTypes=%s and page=%s without coercion',
+  async (allTypes, page, url) => {
+    const result = { items: [], page: 1, totalItems: 0, next: null };
+    const fetch = jest
+      .fn()
+      .mockResolvedValue({ ok: true, json: async () => result });
+    const client = new AutomationContentClient({
+      discoveryApi: { getBaseUrl: async () => '/backend' },
+      fetchApi: { fetch },
+    });
+    await expect(
+      client.listExecutionEnvironments({ allTypes, page }),
+    ).resolves.toEqual(result);
+    expect(fetch).toHaveBeenCalledWith(url);
+  },
+);
 
 it('lists the full inventory when all types are requested', async () => {
   const fetch = jest

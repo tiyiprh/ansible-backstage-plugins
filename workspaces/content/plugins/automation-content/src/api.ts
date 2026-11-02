@@ -141,11 +141,19 @@ export interface Classification {
   signals: string[];
 }
 
+export interface ExecutionEnvironmentPage {
+  items: ExecutionEnvironment[];
+  page: number;
+  totalItems: number;
+  next: string | null;
+}
+
 export interface AutomationContentApi {
   listRegistries(): Promise<Registry[]>;
   listExecutionEnvironments(opts?: {
     allTypes?: boolean;
-  }): Promise<ExecutionEnvironment[]>;
+    page?: number;
+  }): Promise<ExecutionEnvironmentPage>;
   getExecutionEnvironment(ref: string): Promise<ExecutionEnvironment>;
   getContents(
     ref: string,
@@ -257,18 +265,18 @@ export class AutomationContentClient implements AutomationContentApi {
   }
 
   async listExecutionEnvironments(
-    opts: { allTypes?: boolean } = {},
-  ): Promise<ExecutionEnvironment[]> {
+    opts: { allTypes?: boolean; page?: number } = {},
+  ): Promise<ExecutionEnvironmentPage> {
     // By default only artifacts classified as execution environments are
     // listed. `allTypes` opts in to the full registry inventory: the
     // classification is an exact type match, so unclassified images
     // (legitimate EEs lacking builder labels or a manifest referrer) are
     // hidden by the default filter and only reachable through this option.
-    const suffix = opts.allTypes ? '' : '?type=execution-environment';
-    const { items } = await this.get<{ items: ExecutionEnvironment[] }>(
-      `/content${suffix}`,
-    );
-    return items;
+    const search = new URLSearchParams();
+    if (!opts.allTypes) search.set('type', 'execution-environment');
+    if (opts.page !== undefined) search.set('page', String(opts.page));
+    const suffix = search.toString() ? `?${search}` : '';
+    return this.get(`/content${suffix}`);
   }
 
   async getExecutionEnvironment(ref: string): Promise<ExecutionEnvironment> {

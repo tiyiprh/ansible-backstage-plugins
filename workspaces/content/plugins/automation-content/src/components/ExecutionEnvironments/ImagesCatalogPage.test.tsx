@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { TestApiProvider } from '@backstage/test-utils';
 import { catalogApiRef } from '@backstage/plugin-catalog-react';
@@ -30,6 +30,17 @@ const base: ExecutionEnvironment = {
   collections: [],
 };
 
+const envelope = (
+  items: ExecutionEnvironment[],
+  page = 1,
+  totalItems = items.length,
+) => ({
+  items,
+  page,
+  totalItems,
+  next: page * 10 < totalItems ? `?page=${page + 1}` : null,
+});
+
 it('does not describe a failed inventory request as empty', async () => {
   render(
     <TestApiProvider
@@ -55,9 +66,7 @@ it('does not describe a failed inventory request as empty', async () => {
 });
 
 it('defaults to classified EEs and refetches everything when toggled', async () => {
-  const listExecutionEnvironments = jest.fn(
-    async (): Promise<ExecutionEnvironment[]> => [base],
-  );
+  const listExecutionEnvironments = jest.fn(async () => envelope([base]));
   render(
     <TestApiProvider
       apis={[
@@ -74,10 +83,12 @@ it('defaults to classified EEs and refetches everything when toggled', async () 
   ).toBeTruthy();
   expect(listExecutionEnvironments).toHaveBeenLastCalledWith({
     allTypes: false,
+    page: 1,
   });
   await userEvent.click(screen.getByRole('checkbox', { name: /all images/ }));
   expect(listExecutionEnvironments).toHaveBeenLastCalledWith({
     allTypes: true,
+    page: 1,
   });
 });
 
@@ -87,7 +98,7 @@ it('retains search controls when no images match and clears the filters', async 
       apis={[
         [
           automationContentApiRef,
-          { listExecutionEnvironments: async () => [base] },
+          { listExecutionEnvironments: async () => envelope([base]) },
         ],
         [catalogApiRef, { getEntities: async () => ({ items: [] }) }],
       ]}
@@ -106,6 +117,75 @@ it('retains search controls when no images match and clears the filters', async 
   expect(screen.queryByRole('button', { name: /Sync|Build|Edit/ })).toBeNull();
 });
 
+it('uses server totals, fetches page 2 and resets pagination when all types change', async () => {
+  const listExecutionEnvironments = jest.fn(
+    async ({ page }: { page: number }) =>
+      envelope(
+        Array.from({ length: 10 }, (_, index) => ({
+          ...base,
+          ref: `r/repo@sha256:${page}-${index}`,
+          repository: `repo-${page}-${index}`,
+        })),
+        page,
+        26,
+      ),
+  );
+  render(
+    <TestApiProvider
+      apis={[
+        [automationContentApiRef, { listExecutionEnvironments }],
+        [catalogApiRef, { getEntities: async () => ({ items: [] }) }],
+      ]}
+    >
+      <ImagesCatalogPage />
+    </TestApiProvider>,
+  );
+  expect(await screen.findByText('1 - 10 of 26')).toBeTruthy();
+  expect(
+    screen.queryByRole('combobox', { name: 'Select table page size' }),
+  ).toBeNull();
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Next table page' }),
+  );
+  expect(await screen.findByText('11 - 20 of 26')).toBeTruthy();
+  expect(listExecutionEnvironments).toHaveBeenLastCalledWith({
+    allTypes: false,
+    page: 2,
+  });
+  expect(await screen.findByRole('link', { name: 'repo-2-0' })).toBeTruthy();
+  await userEvent.click(screen.getByRole('checkbox', { name: /all images/ }));
+  await waitFor(() =>
+    expect(listExecutionEnvironments).toHaveBeenLastCalledWith({
+      allTypes: true,
+      page: 1,
+    }),
+  );
+  expect(await screen.findByText('1 - 10 of 26')).toBeTruthy();
+});
+
+it('keeps favorites filtering on the current page', async () => {
+  render(
+    <TestApiProvider
+      apis={[
+        [
+          automationContentApiRef,
+          { listExecutionEnvironments: async () => envelope([base]) },
+        ],
+        [catalogApiRef, { getEntities: async () => ({ items: [] }) }],
+      ]}
+    >
+      <ImagesCatalogPage />
+    </TestApiProvider>,
+  );
+  expect(await screen.findByText('1 - 1 of 1')).toBeTruthy();
+  await userEvent.click(
+    screen.getByRole('checkbox', { name: 'Favorites only' }),
+  );
+  expect(await screen.findByText('No images match your filters')).toBeTruthy();
+  await userEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+  expect(await screen.findByRole('link', { name: 'repo' })).toBeTruthy();
+});
+
 it('labels partial counts and unknown contents without requiring catalog matches', async () => {
   render(
     <TestApiProvider
@@ -113,18 +193,17 @@ it('labels partial counts and unknown contents without requiring catalog matches
         [
           automationContentApiRef,
           {
-            listExecutionEnvironments: async (): Promise<
-              ExecutionEnvironment[]
-            > => [
-              base,
-              {
-                ...base,
-                ref: 'r/repo@sha256:two',
-                digest: 'sha256:two',
-                contentsKnown: false,
-                enumeration: { status: 'unknown', source: 'labels' },
-              },
-            ],
+            listExecutionEnvironments: async () =>
+              envelope([
+                base,
+                {
+                  ...base,
+                  ref: 'r/repo@sha256:two',
+                  digest: 'sha256:two',
+                  contentsKnown: false,
+                  enumeration: { status: 'unknown', source: 'labels' },
+                },
+              ]),
           },
         ],
         [catalogApiRef, { getEntities: async () => ({ items: [] }) }],

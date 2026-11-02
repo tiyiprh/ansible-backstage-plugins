@@ -52,7 +52,7 @@ function LandingContent() {
     [api],
   );
   const collections = useAsyncRetry(() => api.listCollections(), [api]);
-  const approximate = environments.value?.some(
+  const approximate = environments.value?.items.some(
     image => !image.contentsKnown || image.enumeration.status !== 'complete',
   );
   const itemCount = collections.value?.reduce(
@@ -170,7 +170,7 @@ function LandingContent() {
           !(environments.error || collections.error) && (
             <Flex direction="column" gap="2">
               <Text>
-                {environments.value?.length ?? 0} execution environments
+                {environments.value?.totalItems ?? 0} execution environments
               </Text>
               <Text>
                 {

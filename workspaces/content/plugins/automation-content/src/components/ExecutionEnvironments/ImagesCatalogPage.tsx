@@ -49,9 +49,10 @@ export function ImagesCatalogPage({
   const { isStarredEntity, toggleStarredEntity } = useStarredEntities();
   const [starredOnly, setStarredOnly] = useState(false);
   const [allTypes, setAllTypes] = useState(false);
+  const [page, setPage] = useState(1);
   const images = useAsyncRetry(
-    () => api.listExecutionEnvironments({ allTypes }),
-    [api, allTypes],
+    () => api.listExecutionEnvironments({ allTypes, page }),
+    [api, allTypes, page],
   );
   // Catalog failure must never hide backend inventory.
   const entities = useAsyncRetry(
@@ -59,7 +60,7 @@ export function ImagesCatalogPage({
     [catalog],
   );
   const data = useMemo(
-    () => images.value?.map(image => ({ ...image, id: image.ref })),
+    () => images.value?.items.map(image => ({ ...image, id: image.ref })),
     [images.value],
   );
   const table = useTable<ImageRow>({
@@ -88,7 +89,8 @@ export function ImagesCatalogPage({
           .toLowerCase()
           .includes(query.toLowerCase()),
       ),
-    paginationOptions: { pageSize: 10, pageSizeOptions: [10, 20, 50] },
+    // Search and favorites filter the fetched page, not the whole inventory.
+    paginationOptions: { type: 'none' },
   });
   const columns: ColumnConfig<ImageRow>[] = [
     {
@@ -190,7 +192,7 @@ export function ImagesCatalogPage({
       >
         <Text as="h2" variant="title-medium">
           Execution Environments images
-          {images.value ? ` (${images.value.length})` : ''}
+          {images.value ? ` (${images.value.totalItems})` : ''}
         </Text>
         <SearchField
           label="Search images"
@@ -202,7 +204,13 @@ export function ImagesCatalogPage({
         <Checkbox isSelected={starredOnly} onChange={setStarredOnly}>
           Favorites only
         </Checkbox>
-        <Checkbox isSelected={allTypes} onChange={setAllTypes}>
+        <Checkbox
+          isSelected={allTypes}
+          onChange={value => {
+            setPage(1);
+            setAllTypes(value);
+          }}
+        >
           Show all images
         </Checkbox>
       </Flex>
@@ -224,6 +232,19 @@ export function ImagesCatalogPage({
         {!images.error && (
           <Table
             {...table.tableProps}
+            pagination={{
+              type: 'page',
+              // Page size is server-fixed at 10 until PR #1023 gains a pageSize param.
+              pageSize: 10,
+              pageSizeOptions: [],
+              offset: ((images.value?.page ?? page) - 1) * 10,
+              totalCount: images.value?.totalItems ?? 0,
+              hasNextPage:
+                !images.loading && page * 10 < (images.value?.totalItems ?? 0),
+              hasPreviousPage: !images.loading && page > 1,
+              onNextPage: () => setPage(current => current + 1),
+              onPreviousPage: () => setPage(current => current - 1),
+            }}
             isPending={images.loading}
             columnConfig={columns}
             emptyState={
