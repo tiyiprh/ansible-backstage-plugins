@@ -210,7 +210,7 @@ it('keeps favorites filtering on the current page', async () => {
   expect(await screen.findByRole('link', { name: 'repo' })).toBeTruthy();
 });
 
-it('renders source and tag facets without an owner facet or column', async () => {
+it('renders source, source-type, status, and content facets', async () => {
   const second: ExecutionEnvironment = {
     ...base,
     ref: 'other/second@sha256:two',
@@ -251,8 +251,17 @@ it('renders source and tag facets without an owner facet or column', async () =>
 
   expect(await screen.findByRole('link', { name: 'repo' })).toBeTruthy();
   expect(screen.getByRole('columnheader', { name: 'Source' })).toBeTruthy();
-  expect(screen.getByRole('button', { name: /Filter by source/ })).toBeTruthy();
-  expect(screen.getByRole('button', { name: /Filter by tag/ })).toBeTruthy();
+  expect(
+    screen.getByRole('button', { name: /Filter by source$/ }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole('button', { name: /Filter by source type/ }),
+  ).toBeTruthy();
+  expect(screen.getByRole('button', { name: /Filter by status/ })).toBeTruthy();
+  expect(
+    screen.getByRole('button', { name: /Filter by content/ }),
+  ).toBeTruthy();
+  expect(screen.queryByRole('button', { name: /Filter by tag/ })).toBeNull();
   expect(screen.queryByRole('columnheader', { name: 'Owner' })).toBeNull();
   expect(screen.queryByRole('button', { name: /Filter by owner/ })).toBeNull();
 
@@ -264,21 +273,26 @@ it('renders source and tag facets without an owner facet or column', async () =>
   expect(screen.getByRole('link', { name: 'repo' })).toBeTruthy();
 });
 
-it('enables tag filtering only for all images and filters tags on the current page', async () => {
-  const second: ExecutionEnvironment = {
+it('filters by content state on the current page', async () => {
+  const unknown: ExecutionEnvironment = {
     ...base,
     ref: 'r/other@sha256:two',
     repository: 'other',
     digest: 'sha256:two',
-    tags: ['stable'],
+    contentsKnown: false,
+    enumeration: { status: 'unknown', source: 'external-introspection' },
   };
-  const listExecutionEnvironments = jest.fn(async () =>
-    envelope([base, second]),
-  );
   const { container } = render(
     <TestApiProvider
       apis={[
-        [automationContentApiRef, { listExecutionEnvironments }],
+        [
+          automationContentApiRef,
+          {
+            listExecutionEnvironments: jest.fn(async () =>
+              envelope([base, unknown]),
+            ),
+          },
+        ],
         [catalogApiRef, { getEntities: async () => ({ items: [] }) }],
       ]}
     >
@@ -289,18 +303,10 @@ it('enables tag filtering only for all images and filters tags on the current pa
   );
 
   await screen.findByRole('link', { name: 'repo' });
-  const tagFacet = screen.getByRole('button', { name: /Filter by tag/ });
-  expect(tagFacet.hasAttribute('disabled')).toBe(true);
-  await userEvent.click(screen.getByRole('checkbox', { name: /all images/ }));
-  await waitFor(() =>
-    expect(listExecutionEnvironments).toHaveBeenLastCalledWith({
-      allTypes: true,
-      page: 1,
-    }),
-  );
-  expect(tagFacet.hasAttribute('disabled')).toBe(false);
-  const tagSelect = container.querySelectorAll('select')[1];
-  fireEvent.change(tagSelect, { target: { value: 'stable' } });
+  expect(screen.getByRole('link', { name: 'other' })).toBeTruthy();
+  // Rail select order: source, source type, status, content.
+  const contentSelect = container.querySelectorAll('select')[3];
+  fireEvent.change(contentSelect, { target: { value: 'unknown' } });
   expect(await screen.findByRole('link', { name: 'other' })).toBeTruthy();
   expect(screen.queryByRole('link', { name: 'repo' })).toBeNull();
 });

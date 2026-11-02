@@ -61,7 +61,9 @@ export function ImagesCatalogPage({
   const [starredOnly, setStarredOnly] = useState(false);
   const [allTypes, setAllTypes] = useState(false);
   const [source, setSource] = useState('all');
-  const [tag, setTag] = useState('all');
+  const [sourceType, setSourceType] = useState('all');
+  const [status, setStatus] = useState('all');
+  const [contentState, setContentState] = useState('all');
   const [page, setPage] = useState(1);
   const images = useAsyncRetry(
     () => api.listExecutionEnvironments({ allTypes, page }),
@@ -72,6 +74,29 @@ export function ImagesCatalogPage({
     () => catalog.getEntities({ filter: { kind: 'Component' } }),
     [catalog],
   );
+  /**
+   * Where the artifact came from. Registry scans are the only source today;
+   * definition-file builds join this dimension when that integration lands.
+   */
+  const sourceTypeLabel = (_image: ExecutionEnvironment): string =>
+    'external registry';
+
+  /** Whether the artifact's inventory is known, approximate, or unknown. */
+  const contentLabel = (image: ExecutionEnvironment): string => {
+    if (!image.contentsKnown) return 'unknown';
+    return image.enumeration.status === 'complete' ? 'known' : 'approximate';
+  };
+
+  /** Row sync state, derived from the owning registry's last read. */
+  const syncStateLabel = (
+    lastReconciledAt?: string,
+    lastReconcileOk?: boolean,
+  ): string => {
+    if (!lastReconciledAt) return 'Pending';
+    if (lastReconcileOk === false) return 'Sync failed';
+    return 'Synced';
+  };
+
   const data = useMemo(
     () => images.value?.items.map(image => ({ ...image, id: image.ref })),
     [images.value],
@@ -92,12 +117,25 @@ export function ImagesCatalogPage({
     () => [...new Set((data ?? []).map(image => image.registry))].sort(),
     [data],
   );
-  const tags = useMemo(
+  const sourceTypes = useMemo(
     () =>
-      allTypes
-        ? [...new Set((data ?? []).flatMap(image => image.tags))].sort()
-        : [],
-    [allTypes, data],
+      [...new Set((data ?? []).map(image => sourceTypeLabel(image)))].sort(),
+    [data],
+  );
+  const statuses = useMemo(
+    () =>
+      [
+        ...new Set(
+          (data ?? []).map(image =>
+            syncStateLabel(image.lastReconciledAt, image.lastReconcileOk),
+          ),
+        ),
+      ].sort(),
+    [data],
+  );
+  const contents = useMemo(
+    () => [...new Set((data ?? []).map(image => contentLabel(image)))].sort(),
+    [data],
   );
 
   // These facets filter only the currently fetched page; server-side filtering is not available yet.
@@ -106,10 +144,14 @@ export function ImagesCatalogPage({
       (data ?? []).filter(image => {
         return (
           (source === 'all' || image.registry === source) &&
-          (tag === 'all' || image.tags.includes(tag))
+          (sourceType === 'all' || sourceTypeLabel(image) === sourceType) &&
+          (status === 'all' ||
+            syncStateLabel(image.lastReconciledAt, image.lastReconcileOk) ===
+              status) &&
+          (contentState === 'all' || contentLabel(image) === contentState)
         );
       }),
-    [data, source, tag],
+    [contentState, data, source, sourceType, status],
   );
 
   const table = useTable<ImageRow>({
@@ -139,16 +181,6 @@ export function ImagesCatalogPage({
     // Search and favorites filter the fetched page, not the whole inventory.
     paginationOptions: { type: 'none' },
   });
-  /** Row sync state, derived from the owning registry's last read. */
-  const syncStateLabel = (
-    lastReconciledAt?: string,
-    lastReconcileOk?: boolean,
-  ): string => {
-    if (!lastReconciledAt) return 'Pending';
-    if (lastReconcileOk === false) return 'Sync failed';
-    return 'Synced';
-  };
-
   const columns: ColumnConfig<ImageRow>[] = [
     {
       id: 'image',
@@ -264,14 +296,33 @@ export function ImagesCatalogPage({
               ]}
             />
             <Select
-              aria-label="Filter by tag"
+              aria-label="Filter by source type"
               size="small"
-              value={tag}
-              isDisabled={!allTypes}
-              onChange={value => setTag(String(value))}
+              value={sourceType}
+              onChange={value => setSourceType(String(value))}
               options={[
-                { value: 'all', label: 'All tags' },
-                ...tags.map(value => ({ value, label: value })),
+                { value: 'all', label: 'All source types' },
+                ...sourceTypes.map(value => ({ value, label: value })),
+              ]}
+            />
+            <Select
+              aria-label="Filter by status"
+              size="small"
+              value={status}
+              onChange={value => setStatus(String(value))}
+              options={[
+                { value: 'all', label: 'All statuses' },
+                ...statuses.map(value => ({ value, label: value })),
+              ]}
+            />
+            <Select
+              aria-label="Filter by content"
+              size="small"
+              value={contentState}
+              onChange={value => setContentState(String(value))}
+              options={[
+                { value: 'all', label: 'All contents' },
+                ...contents.map(value => ({ value, label: value })),
               ]}
             />
             <Checkbox isSelected={starredOnly} onChange={setStarredOnly}>
@@ -282,7 +333,6 @@ export function ImagesCatalogPage({
               onChange={value => {
                 setPage(1);
                 setAllTypes(value);
-                if (!value) setTag('all');
               }}
             >
               Show all images
@@ -354,7 +404,9 @@ export function ImagesCatalogPage({
                           table.search.onChange('');
                           setStarredOnly(false);
                           setSource('all');
-                          setTag('all');
+                          setSourceType('all');
+                          setStatus('all');
+                          setContentState('all');
                         }}
                       >
                         Clear filters
