@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { ReactElement } from 'react';
 import useAsyncRetry from 'react-use/lib/useAsyncRetry';
 import { useApi, useRouteRef } from '@backstage/core-plugin-api';
@@ -9,24 +10,28 @@ import {
 } from '@backstage/plugin-catalog-react';
 import {
   Button,
+  ButtonIcon,
   Cell,
   CellText,
   Checkbox,
+  ColumnConfig,
   Container,
   Flex,
+  Menu,
+  MenuItem,
+  MenuTrigger,
   Select,
   Table,
   Text,
   useTable,
-  type ColumnConfig,
 } from '@backstage/ui';
+import MoreVertIcon from '@material-ui/icons/MoreVert';
 import { automationContentApiRef, type ExecutionEnvironment } from '../../api';
 import { eeRouteRef } from '../../routes';
 import {
   CatalogExplorerLayout,
   EmptyState,
   PageHeaderSection,
-  StarIcon,
 } from '../common';
 import {
   environmentHref,
@@ -51,6 +56,7 @@ export function ImagesCatalogPage({
   const api = useApi(automationContentApiRef);
   const catalog = useApi(catalogApiRef);
   const base = useRouteRef(eeRouteRef)();
+  const navigate = useNavigate();
   const { isStarredEntity, toggleStarredEntity } = useStarredEntities();
   const [starredOnly, setStarredOnly] = useState(false);
   const [allTypes, setAllTypes] = useState(false);
@@ -195,26 +201,40 @@ export function ImagesCatalogPage({
       cell: row => <CellText title={relativeTime(row.lastReconciledAt)} />,
     },
     {
-      id: 'favourite',
+      id: 'actions',
       label: 'Actions',
       cell: row => {
         const entity = entityByImageRef.get(row.ref);
+        const starred = entity ? isStarredEntity(entity) : false;
         return (
           <Cell>
-            {entity && (
-              <Button
+            <MenuTrigger>
+              <ButtonIcon
                 variant="tertiary"
-                aria-pressed={isStarredEntity(entity)}
-                aria-label={`${isStarredEntity(entity) ? 'Remove' : 'Add'} ${
-                  row.repository
-                } ${row.digest} ${
-                  isStarredEntity(entity) ? 'from' : 'to'
-                } favorites`}
-                onPress={() => toggleStarredEntity(entity)}
+                aria-label={`Actions for ${row.repository}`}
               >
-                <StarIcon selected={isStarredEntity(entity)} />
-              </Button>
-            )}
+                <MoreVertIcon />
+              </ButtonIcon>
+              <Menu>
+                {entity && (
+                  <MenuItem onAction={() => toggleStarredEntity(entity)}>{`${
+                    starred ? 'Remove from' : 'Add to'
+                  } favorites`}</MenuItem>
+                )}
+                <MenuItem
+                  onAction={() =>
+                    navigator.clipboard?.writeText(row.pullReference)
+                  }
+                >
+                  Copy pull reference
+                </MenuItem>
+                <MenuItem
+                  onAction={() => navigate(environmentHref(base, row.ref))}
+                >
+                  View details
+                </MenuItem>
+              </Menu>
+            </MenuTrigger>
           </Cell>
         );
       },

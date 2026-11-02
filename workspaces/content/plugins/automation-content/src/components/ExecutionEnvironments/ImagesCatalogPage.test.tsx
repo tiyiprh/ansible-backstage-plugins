@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import { TestApiProvider } from '@backstage/test-utils';
 import { catalogApiRef } from '@backstage/plugin-catalog-react';
@@ -69,7 +70,9 @@ it('does not describe a failed inventory request as empty', async () => {
         [catalogApiRef, { getEntities: async () => ({ items: [] }) }],
       ]}
     >
-      <ImagesCatalogPage />
+      <MemoryRouter>
+        <ImagesCatalogPage />
+      </MemoryRouter>
     </TestApiProvider>,
   );
   expect(await screen.findByRole('alert')).toBeTruthy();
@@ -87,7 +90,9 @@ it('defaults to classified EEs and refetches everything when toggled', async () 
         [catalogApiRef, { getEntities: async () => ({ items: [] }) }],
       ]}
     >
-      <ImagesCatalogPage />
+      <MemoryRouter>
+        <ImagesCatalogPage />
+      </MemoryRouter>
     </TestApiProvider>,
   );
   expect(await screen.findByRole('link', { name: 'repo' })).toBeTruthy();
@@ -116,7 +121,9 @@ it('retains search controls when no images match and clears the filters', async 
         [catalogApiRef, { getEntities: async () => ({ items: [] }) }],
       ]}
     >
-      <ImagesCatalogPage />
+      <MemoryRouter>
+        <ImagesCatalogPage />
+      </MemoryRouter>
     </TestApiProvider>,
   );
   expect(await screen.findByRole('link', { name: 'repo' })).toBeTruthy();
@@ -150,7 +157,9 @@ it('uses server totals, fetches page 2 and resets pagination when all types chan
         [catalogApiRef, { getEntities: async () => ({ items: [] }) }],
       ]}
     >
-      <ImagesCatalogPage />
+      <MemoryRouter>
+        <ImagesCatalogPage />
+      </MemoryRouter>
     </TestApiProvider>,
   );
   expect(await screen.findByText('1 - 10 of 26')).toBeTruthy();
@@ -187,7 +196,9 @@ it('keeps favorites filtering on the current page', async () => {
         [catalogApiRef, { getEntities: async () => ({ items: [] }) }],
       ]}
     >
-      <ImagesCatalogPage />
+      <MemoryRouter>
+        <ImagesCatalogPage />
+      </MemoryRouter>
     </TestApiProvider>,
   );
   expect(await screen.findByText('1 - 1 of 1')).toBeTruthy();
@@ -232,7 +243,9 @@ it('renders source and tag facets without an owner facet or column', async () =>
         ],
       ]}
     >
-      <ImagesCatalogPage />
+      <MemoryRouter>
+        <ImagesCatalogPage />
+      </MemoryRouter>
     </TestApiProvider>,
   );
 
@@ -269,7 +282,9 @@ it('enables tag filtering only for all images and filters tags on the current pa
         [catalogApiRef, { getEntities: async () => ({ items: [] }) }],
       ]}
     >
-      <ImagesCatalogPage />
+      <MemoryRouter>
+        <ImagesCatalogPage />
+      </MemoryRouter>
     </TestApiProvider>,
   );
 
@@ -313,7 +328,9 @@ it('labels partial counts and unknown contents without requiring catalog matches
         [catalogApiRef, { getEntities: async () => ({ items: [] }) }],
       ]}
     >
-      <ImagesCatalogPage />
+      <MemoryRouter>
+        <ImagesCatalogPage />
+      </MemoryRouter>
     </TestApiProvider>,
   );
   expect(
