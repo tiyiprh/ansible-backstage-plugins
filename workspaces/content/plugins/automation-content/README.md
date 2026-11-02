@@ -7,16 +7,20 @@ enumeration, item documentation, and registry health visibility.
 
 ## Pages
 
-All routes live under `/automation-content`:
+All routes live under `/content`:
 
-| Route                                                         | Page                                                                                 |
-| ------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `/automation-content`                                         | Landing: registry health cards, inventory counts, sync (superuser)                   |
-| `/automation-content/execution-environments`                  | EE catalog. Defaults to classified EEs; "Show all images" reveals the full inventory |
-| `/automation-content/execution-environments/:ref`             | EE details: tags, contents, provided collections and plugins                         |
-| `/automation-content/collections`                             | Collections catalog grouped by FQCN with latest-version badges                       |
-| `/automation-content/collections/:namespace/:name`            | Collection details: versions, providing environments, contents                       |
-| `/automation-content/collections/:namespace/:name/docs/:item` | Content item documentation (ansible-doc style)                                       |
+| Route                                   | Page                                                           |
+| --------------------------------------- | -------------------------------------------------------------- |
+| `/content`                              | Redirect to the images catalog                                 |
+| `/content/ee`                           | Images catalog with Images, Definition files, and Create tabs  |
+| `/content/ee/:ref`                      | EE details: tags, contents, provided collections and plugins   |
+| `/content/collections`                  | Collections catalog grouped by FQCN with latest-version badges |
+| `/content/collections/:namespace/:name` | Collection details: versions, providing environments, contents |
+
+The old `/automation-content` root and catalog paths redirect to their
+`/content` equivalents, including execution environment and collection details.
+There is no separate landing page. Registry sync lives in a superuser-only
+header button on the images page.
 
 The same components render in both the new frontend system (`alpha.tsx`
 blueprints, the default host) and the legacy app entry, so both hosts serve
@@ -33,8 +37,8 @@ exclusively to the portal backend through `automationContentApiRef`:
   registry content into the catalog; the pages use catalog entities only for
   favorites/stars.
 
-EE authoring (the build dialog) and SCM token handling are intentionally out
-of scope; they remain in `@ansible/portal-scaffolder`.
+The Definition files and Create tabs reuse the Portal SDK's EE authoring
+components. SCM token handling remains in `@ansible/portal-scaffolder`.
 
 ## Configuration
 
@@ -57,20 +61,21 @@ username/password, TLS verification) for registry connections.
 
 ## Behavior notes
 
-- **EE catalog scope:** rows default to artifacts the backend classifies as
-  execution environments. Unclassified images stay reachable through the
-  "Show all images" toggle, because the classification requires builder
-  labels or manifest referrers that not every legitimate EE carries.
+- **Images catalog scope:** the Images tab shows the registry image inventory,
+  including images not classified as execution environments. Classification
+  requires builder labels or manifest referrers that not every legitimate EE
+  carries.
 - **Inventory fidelity:** images whose contents could not be enumerated show a
   distinct "Contents unknown" badge; counts are never presented as complete
   when the inventory is partial.
-- **Sync gating:** registry sync actions are rendered only for superusers and
-  the backend rejects sync requests from non-superusers with 403.
+- **View gating:** `ansible.content.view` gates the content views and API reads.
+- **Sync gating:** the images page's header sync button is rendered only for
+  superusers, and the backend rejects sync requests from non-superusers with 403.
 
 ## Local development
 
 Run `yarn start` from the repository root and open
-[/automation-content](http://localhost:3000/automation-content). For a
+[/content/ee](http://localhost:3000/content/ee). For a
 self-contained registry, `scripts/dev-up.sh --registry` (repository root)
 starts a local OCI registry seeded with demo images and writes the matching
 `app-config.local.yaml`.

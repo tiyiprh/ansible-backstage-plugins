@@ -1,4 +1,4 @@
-import { Navigate, Route } from 'react-router-dom';
+import { Navigate, Route, useParams } from 'react-router-dom';
 import { apiDocsPlugin, ApiExplorerPage } from '@backstage/plugin-api-docs';
 import {
   CatalogEntityPage,
@@ -65,6 +65,23 @@ import {
   ScmSelectorFieldExtension,
 } from '@ansible/portal-scaffolder';
 import { RbacPage } from '@backstage-community/plugin-rbac';
+
+function LegacyEEDetailsRedirect() {
+  const { ref } = useParams();
+  return <Navigate to={`/content/ee/${encodeURIComponent(ref!)}`} replace />;
+}
+
+function LegacyCollectionDetailsRedirect() {
+  const { namespace, name } = useParams();
+  return (
+    <Navigate
+      to={`/content/collections/${encodeURIComponent(
+        namespace!,
+      )}/${encodeURIComponent(name!)}`}
+      replace
+    />
+  );
+}
 
 const app = createApp({
   apis,
@@ -168,6 +185,14 @@ const routes = (
       element={<Navigate to="/content/collections" replace />}
     />
     <Route path="/self-service" element={<SelfServicePage />} />
+    <Route
+      path="/automation-content/execution-environments/:ref"
+      element={<LegacyEEDetailsRedirect />}
+    />
+    <Route
+      path="/automation-content/collections/:namespace/:name"
+      element={<LegacyCollectionDetailsRedirect />}
+    />
   </FlatRoutes>
 );
 

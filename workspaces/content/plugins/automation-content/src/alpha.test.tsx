@@ -1,6 +1,7 @@
 import { screen } from '@testing-library/react';
 import { renderTestApp } from '@backstage/frontend-test-utils';
 import plugin from './alpha';
+import { useParams } from 'react-router-dom';
 
 jest.mock('@ansible/portal-plugin-sdk', () => ({
   ...jest.requireActual('@ansible/portal-plugin-sdk'),
@@ -23,7 +24,20 @@ jest.mock('./components/CollectionsCatalog/CollectionsCatalogPage', () => ({
   CollectionsCatalogPage: () => <h1>Collections</h1>,
 }));
 jest.mock('./components/CollectionsCatalog/CollectionDetailsPage', () => ({
-  CollectionDetailsPage: () => <h1>Collection details</h1>,
+  CollectionDetailsPage: () => {
+    const { namespace, name } = useParams();
+    return (
+      <h1>
+        Collection details {namespace}.{name}
+      </h1>
+    );
+  },
+}));
+jest.mock('./components/ExecutionEnvironments/EEDetailsPage', () => ({
+  EEDetailsPage: () => {
+    const { ref } = useParams();
+    return <h1>EE details {ref}</h1>;
+  },
 }));
 
 it.each([
@@ -33,7 +47,18 @@ it.each([
   ['/automation-content/execution-environments', 'Execution Environments'],
   ['/automation-content/collections', 'Collections'],
   ['/content/collections', 'Collections'],
-  ['/content/collections/ns/name_with.dots', 'Collection details'],
+  [
+    '/content/collections/ns/name_with.dots',
+    'Collection details ns.name_with.dots',
+  ],
+  [
+    '/automation-content/execution-environments/registry%2Fdemo%40sha256%3A123',
+    'EE details registry/demo@sha256:123',
+  ],
+  [
+    '/automation-content/collections/ns/name_with.dots',
+    'Collection details ns.name_with.dots',
+  ],
 ])('discovers the native page at %s', async (path, text) => {
   await renderTestApp({ features: [plugin], initialRouteEntries: [path] });
   expect(await screen.findByText(text, {}, { timeout: 10000 })).toBeTruthy();

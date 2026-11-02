@@ -9,7 +9,7 @@ import {
   convertLegacyRouteRef,
 } from '@backstage/core-compat-api';
 import { automationContentApiFactory } from './apis';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useParams } from 'react-router-dom';
 import BuildIcon from '@material-ui/icons/Build';
 import ExtensionIcon from '@material-ui/icons/Extension';
 import {
@@ -18,6 +18,23 @@ import {
   collectionsRouteRef,
   collectionDetailsRouteRef,
 } from './routes';
+
+function LegacyEEDetailsRedirect() {
+  const { ref } = useParams();
+  return <Navigate to={`/content/ee/${encodeURIComponent(ref!)}`} replace />;
+}
+
+function LegacyCollectionDetailsRedirect() {
+  const { namespace, name } = useParams();
+  return (
+    <Navigate
+      to={`/content/collections/${encodeURIComponent(
+        namespace!,
+      )}/${encodeURIComponent(name!)}`}
+      replace
+    />
+  );
+}
 
 /** Native discovery lets hosts mount content catalogs without legacy app wiring. */
 export const automationContentPlugin: FrontendPlugin = createFrontendPlugin({
@@ -78,6 +95,13 @@ export const automationContentPlugin: FrontendPlugin = createFrontendPlugin({
       },
     }),
     PageBlueprint.make({
+      name: 'ee-details-redirect',
+      params: {
+        path: '/automation-content/execution-environments/:ref',
+        loader: async () => compatWrapper(<LegacyEEDetailsRedirect />),
+      },
+    }),
+    PageBlueprint.make({
       name: 'collections',
       params: {
         // Content-workspace mount per the 2026-11-02 direction: the content
@@ -102,6 +126,13 @@ export const automationContentPlugin: FrontendPlugin = createFrontendPlugin({
         path: '/automation-content/collections',
         loader: async () =>
           compatWrapper(<Navigate to="/content/collections" replace />),
+      },
+    }),
+    PageBlueprint.make({
+      name: 'collection-details-redirect',
+      params: {
+        path: '/automation-content/collections/:namespace/:name',
+        loader: async () => compatWrapper(<LegacyCollectionDetailsRedirect />),
       },
     }),
     PageBlueprint.make({
