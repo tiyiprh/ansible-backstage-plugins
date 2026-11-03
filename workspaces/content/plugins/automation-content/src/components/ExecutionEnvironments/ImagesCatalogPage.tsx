@@ -47,6 +47,11 @@ import {
   syncStateLabel,
 } from './catalogHelpers';
 import styles from './details.module.css';
+import {
+  getDemoImageMetadata,
+  isDemoImageRef,
+} from '../../development/metadata';
+import { hasDemoImages } from '../../development/demoMode';
 
 interface ImageRow extends ExecutionEnvironment {
   id: string;
@@ -63,6 +68,15 @@ function syncStatusTone(status: string): StatusBadgeTone {
   return 'info';
 }
 
+function imageSourceLabel(
+  registry: string,
+  metadata: NonNullable<ReturnType<typeof getDemoImageMetadata>> | undefined,
+): string {
+  if (metadata?.sourceType === 'definition-file') return 'Definition file';
+  if (metadata?.sourceType === 'external-registry') return 'External registry';
+  return sourceLabel(registry);
+}
+
 /** Registry inventory with client-side search and optional catalog-owned stars. */
 export function ImagesCatalogPage({
   showHeader = true,
@@ -72,6 +86,7 @@ export function ImagesCatalogPage({
   wrapInContainer?: boolean;
 }): ReactElement {
   const api = useApi(automationContentApiRef);
+  const demoMode = hasDemoImages(api);
   const catalog = useApi(catalogApiRef);
   const base = useRouteRef(eeRouteRef)();
   const navigate = useNavigate();
@@ -96,12 +111,13 @@ export function ImagesCatalogPage({
   // Catalog failure must never hide backend inventory. Only fetch candidates
   // for this page; annotation values are ORed within the digest filter.
   const entities = useAsyncRetry(async () => {
-    if (!data?.length) return { items: [] };
+    const realImages = data?.filter(image => !isDemoImageRef(image.ref)) ?? [];
+    if (!realImages.length) return { items: [] };
     return catalog.getEntities({
       filter: {
         kind: 'Component',
         'metadata.annotations.ansible.com/digest': [
-          ...new Set(data.map(image => image.digest)),
+          ...new Set(realImages.map(image => image.digest)),
         ],
       },
     });
@@ -110,6 +126,7 @@ export function ImagesCatalogPage({
   const entityByImageRef = useMemo(() => {
     const linked = new Map<string, Entity>();
     for (const image of data ?? []) {
+      if (isDemoImageRef(image.ref)) continue;
       const entity = entities.value?.items.find(candidate =>
         matchesEnvironment(candidate, image),
       );
@@ -147,6 +164,7 @@ export function ImagesCatalogPage({
   });
 
   const syncRegistry = async (registry: string): Promise<void> => {
+    if (demoMode) return;
     setSyncingRegistry(registry);
     setSyncError('');
     try {
@@ -170,45 +188,37 @@ export function ImagesCatalogPage({
       isRowHeader: true,
       cell: row => (
         <Cell>
-          <Link
-            href={environmentHref(base, row.ref)}
-            color="info"
-            className={styles.infoLink}
-          >
-            {row.repository}
-          </Link>
+          <Flex align="center" gap="2" className={styles.wrapFlex}>
+            <Link
+              href={environmentHref(base, row.ref)}
+              color="info"
+              className={styles.infoLink}
+            >
+              {row.repository}
+            </Link>
+          </Flex>
         </Cell>
       ),
     },
     {
       id: 'source',
       label: 'Source',
-      cell: row => (
-        <Cell>
-          <Flex direction="column" align="start" gap="1">
-            {row.registry && <Text>{displayRegistryName(row.registry)}</Text>}
-            <StatusBadge
-              tone={
-                sourceLabel(row.registry) === 'Definition file'
-                  ? 'info'
-                  : 'neutral'
-              }
-            >
-              {sourceLabel(row.registry)}
-            </StatusBadge>
-          </Flex>
-        </Cell>
-      ),
-    },
-    {
-      id: 'tags',
-      label: 'Tags / digest',
-      cell: row => (
-        <CellText
-          title={row.tags.join(', ') || 'Untagged'}
-          description={row.digest.slice(0, 19)}
-        />
-      ),
+      cell: row => {
+        const demoMetadata = getDemoImageMetadata(row.ref);
+        const source = imageSourceLabel(row.registry, demoMetadata);
+        return (
+          <Cell>
+            <Flex direction="column" align="start" gap="1">
+              {row.registry && <Text>{displayRegistryName(row.registry)}</Text>}
+              <StatusBadge
+                tone={source === 'Definition file' ? 'info' : 'neutral'}
+              >
+                {source}
+              </StatusBadge>
+            </Flex>
+          </Cell>
+        );
+      },
     },
     {
       id: 'contents',
@@ -239,12 +249,13 @@ export function ImagesCatalogPage({
       id: 'actions',
       label: 'Actions',
       cell: row => {
+        const demoImage = isDemoImageRef(row.ref);
         const entity = entityByImageRef.get(row.ref);
         const starred = entity ? isStarredEntity(entity) : false;
         return (
           <Cell>
             <Flex align="center" gap="1">
-              {entity && (
+              {entity && !demoImage && (
                 <ButtonIcon
                   variant="tertiary"
                   icon={starred ? <StarIcon /> : <StarBorderIcon />}
@@ -262,18 +273,23 @@ export function ImagesCatalogPage({
                   aria-label={`Actions for ${row.repository}`}
                 />
                 <Menu>
-                  <MenuItem onAction={() => setControllerImage(row)}>
-                    Use in controller
-                  </MenuItem>
-                  <MenuItem onAction={() => void syncRegistry(row.registry)}>
-                    {syncingRegistry === row.registry ? 'Syncing…' : 'Sync'}
+                  <MenuItem
+                    isDisabled={demoImage}
+                    onAction={() => {
+                      if (!demoImage) setControllerImage(row);
+                    }}
+                  >
+                    Use in Controller
                   </MenuItem>
                   <MenuItem
-                    onAction={() =>
-                      navigator.clipboard?.writeText(row.pullReference)
-                    }
+                    isDisabled={demoImage || demoMode}
+                    onAction={() => {
+                      if (!demoImage && !demoMode) {
+                        void syncRegistry(row.registry);
+                      }
+                    }}
                   >
-                    Copy pull reference
+                    {syncingRegistry === row.registry ? 'Syncing…' : 'Sync'}
                   </MenuItem>
                   <MenuItem
                     onAction={() => navigate(environmentHref(base, row.ref))}

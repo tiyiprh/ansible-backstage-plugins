@@ -26,7 +26,7 @@ it('prefills image details and reports the unavailable template honestly', async
   );
   expect(screen.getByRole('textbox', { name: 'Organization' })).toBeTruthy();
   await userEvent.click(
-    screen.getByRole('button', { name: 'Use in controller' }),
+    screen.getByRole('button', { name: 'Use in Controller' }),
   );
   expect((await screen.findByRole('alert')).textContent).toContain(
     'This action is not available yet. The task template was not found.',

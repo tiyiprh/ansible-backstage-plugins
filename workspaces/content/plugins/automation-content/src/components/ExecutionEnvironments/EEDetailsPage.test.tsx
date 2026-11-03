@@ -4,7 +4,12 @@ import { TestApiProvider } from '@backstage/test-utils';
 import userEvent from '@testing-library/user-event';
 import { catalogApiRef } from '@backstage/plugin-catalog-react';
 import { scaffolderApiRef } from '@backstage/plugin-scaffolder-react';
-import { automationContentApiRef, type ExecutionEnvironment } from '../../api';
+import {
+  automationContentApiRef,
+  type ArtifactContents,
+  type Enumeration,
+  type ExecutionEnvironment,
+} from '../../api';
 import { EEDetailsPage } from './EEDetailsPage';
 
 jest.mock('@backstage/core-plugin-api', () => ({
@@ -89,15 +94,283 @@ it.each(['registry/repo@sha256:one', 'registry/repo@sha256:two'])(
       new URLSearchParams({ in: ref, version: '1.0.0' }).toString(),
     );
     expect(getContents).toHaveBeenCalledWith(ref);
+    expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual([
+      'Overview',
+      'Collections',
+    ]);
+    expect(screen.queryByRole('tab', { name: 'Content items' })).toBeNull();
     expect(getEntities).toHaveBeenCalledWith({
       filter: {
         kind: 'Component',
         'metadata.annotations.ansible.com/digest': [image.digest],
       },
     });
-    expect(screen.getByText('Approximate: 2')).toBeTruthy();
+    expect(screen.getByText('Approximate: 2 plugins')).toBeTruthy();
+    expect(
+      screen
+        .getAllByRole('columnheader')
+        .map(header => header.textContent?.trim()),
+    ).toEqual([
+      'Collection',
+      'Version',
+      'Status',
+      'Publisher',
+      'Signing',
+      'Source',
+      'Contents',
+    ]);
+    for (const countColumn of [
+      'Plugins',
+      'Roles',
+      'Playbooks',
+      'EDA plugins',
+      'Rulebooks',
+    ]) {
+      expect(
+        screen.queryByRole('columnheader', { name: countColumn }),
+      ).toBeNull();
+    }
+    expect(screen.getAllByText('Not reported')).toHaveLength(4);
+    expect(screen.queryByText('Certified')).toBeNull();
+    expect(screen.queryByText('Signed')).toBeNull();
   },
 );
+
+function renderLegacyContentLink(query: string) {
+  const getContentItem = jest.fn().mockResolvedValue({
+    fqcn: 'ansible.posix.mount',
+    type: 'module',
+    collection: 'ansible.posix',
+    collectionVersion: '1.0.0',
+    description: ['Retained direct documentation'],
+    enumeration: image.enumeration,
+    providedBy: [image.ref],
+  });
+  render(
+    <TestApiProvider
+      apis={[
+        [catalogApiRef, { getEntities: async () => ({ items: [] }) }],
+        [
+          automationContentApiRef,
+          {
+            getExecutionEnvironment: async () => image,
+            getContents: async () => ({
+              enumeration: image.enumeration,
+              collections: [],
+              items: [],
+            }),
+            getContentItem,
+          },
+        ],
+      ]}
+    >
+      <MemoryRouter
+        initialEntries={[`/${encodeURIComponent(image.ref)}${query}`]}
+      >
+        <Routes>
+          <Route path=":ref" element={<EEDetailsPage />} />
+        </Routes>
+      </MemoryRouter>
+    </TestApiProvider>,
+  );
+  return getContentItem;
+}
+
+it('falls back to Overview for the removed content tab', async () => {
+  const getContentItem = renderLegacyContentLink('?tab=content');
+  expect(
+    await screen.findByRole('tab', { name: 'Overview', selected: true }),
+  ).toBeTruthy();
+  expect(screen.getAllByRole('tab')).toHaveLength(2);
+  expect(screen.queryByRole('tab', { name: 'Content items' })).toBeNull();
+  expect(getContentItem).not.toHaveBeenCalled();
+});
+
+it('retains direct documentation links with a Collections back link', async () => {
+  const getContentItem = renderLegacyContentLink(
+    '?tab=content&item=ansible.posix.mount',
+  );
+  await screen.findByText('Retained direct documentation');
+  expect(getContentItem).toHaveBeenCalledWith('ansible.posix.mount', image.ref);
+  expect(
+    screen.getByRole('link', { name: 'repo' }).getAttribute('href'),
+  ).toContain('?tab=collections');
+});
+
+it('shows populated image metadata without leaking missing classification confidence', async () => {
+  const pullReference = `registry.example.net/ansible/utopia-ee@sha256:${'a'.repeat(
+    64,
+  )}`;
+  const populatedImage: ExecutionEnvironment = {
+    ...image,
+    ref: pullReference,
+    registry: 'Production registry',
+    repository: 'ansible/utopia-ee',
+    digest: `sha256:${'a'.repeat(64)}`,
+    pullReference,
+    type: 'execution-environment',
+    classification: {
+      type: 'execution-environment',
+      confidence: undefined as unknown as string,
+      signals: [],
+    },
+    tags: ['latest', '3.0.1'],
+    contentsKnown: true,
+    enumeration: {
+      status: 'complete',
+      source: 'build-time-manifest',
+      ansibleCore: '2.16.4',
+      extractedAt: '2025-01-05T12:00:00Z',
+    },
+    counts: { collections: 6, plugins: 457 },
+  };
+  const { container } = render(
+    <TestApiProvider
+      apis={[
+        [catalogApiRef, { getEntities: async () => ({ items: [] }) }],
+        [
+          automationContentApiRef,
+          {
+            getExecutionEnvironment: async () => populatedImage,
+            getContents: async () => ({
+              enumeration: populatedImage.enumeration,
+              collections: [],
+              items: [],
+            }),
+          },
+        ],
+      ]}
+    >
+      <MemoryRouter initialEntries={[`/${encodeURIComponent(pullReference)}`]}>
+        <Routes>
+          <Route path=":ref" element={<EEDetailsPage />} />
+        </Routes>
+      </MemoryRouter>
+    </TestApiProvider>,
+  );
+
+  expect(
+    await screen.findByRole('heading', { name: 'ansible/utopia-ee' }),
+  ).toBeTruthy();
+  expect(screen.getByRole('link', { name: 'Images' })).toBeTruthy();
+  expect(screen.getByText('Production registry')).toBeTruthy();
+  expect(screen.getByText('Build-time manifest')).toBeTruthy();
+  expect(screen.getByText('6 collections / 457 plugins')).toBeTruthy();
+  expect(screen.getByText('Unknown')).toBeTruthy();
+  expect(screen.getByText(pullReference)).toBeTruthy();
+  expect(container.querySelectorAll('.bui-Card')).toHaveLength(1);
+  expect(screen.queryByText(/undefined/)).toBeNull();
+  expect(screen.queryByText(/confidence/i)).toBeNull();
+});
+
+it('combines only reported collection content counts and marks missing metadata', async () => {
+  const enumeration: Enumeration = {
+    status: 'complete',
+    source: 'build-time-manifest',
+  };
+  const completeImage: ExecutionEnvironment = {
+    ...image,
+    contentsKnown: true,
+    enumeration,
+  };
+  const completeContents: ArtifactContents = {
+    enumeration,
+    collections: [
+      {
+        namespace: 'ansible',
+        name: 'posix',
+        fqcn: 'ansible.posix',
+        version: '2.0.0',
+        counts: { plugins: 48, roles: 5, playbooks: 3 },
+      },
+    ],
+    items: [],
+  };
+  const getContents = jest.fn(async () => completeContents);
+  render(
+    <TestApiProvider
+      apis={[
+        [catalogApiRef, { getEntities: async () => ({ items: [] }) }],
+        [
+          automationContentApiRef,
+          {
+            getExecutionEnvironment: async () => completeImage,
+            getContents,
+          },
+        ],
+      ]}
+    >
+      <MemoryRouter
+        initialEntries={[`/${encodeURIComponent(image.ref)}?tab=collections`]}
+      >
+        <Routes>
+          <Route path=":ref" element={<EEDetailsPage />} />
+        </Routes>
+      </MemoryRouter>
+    </TestApiProvider>,
+  );
+
+  expect(
+    await screen.findByRole('link', { name: 'ansible.posix' }),
+  ).toBeTruthy();
+  expect(screen.getByText('48 plugins, 5 roles, 3 playbooks')).toBeTruthy();
+  expect(screen.getAllByText('Not reported')).toHaveLength(4);
+  expect(screen.queryByText(/0 (plugins|roles|playbooks)/)).toBeNull();
+  expect(getContents).toHaveBeenCalledWith(image.ref);
+});
+
+it('keeps collection contents unknown when the image inventory is unknown', async () => {
+  const enumeration: Enumeration = {
+    status: 'unknown',
+    source: 'external-introspection',
+  };
+  const unknownImage: ExecutionEnvironment = {
+    ...image,
+    contentsKnown: false,
+    enumeration,
+  };
+  const unknownContents: ArtifactContents = {
+    enumeration,
+    collections: [
+      {
+        namespace: 'ansible',
+        name: 'posix',
+        fqcn: 'ansible.posix',
+        version: '1.0.0',
+        counts: { plugins: 10 },
+      },
+    ],
+    items: [],
+  };
+  render(
+    <TestApiProvider
+      apis={[
+        [catalogApiRef, { getEntities: async () => ({ items: [] }) }],
+        [
+          automationContentApiRef,
+          {
+            getExecutionEnvironment: async () => unknownImage,
+            getContents: async () => unknownContents,
+          },
+        ],
+      ]}
+    >
+      <MemoryRouter
+        initialEntries={[`/${encodeURIComponent(image.ref)}?tab=collections`]}
+      >
+        <Routes>
+          <Route path=":ref" element={<EEDetailsPage />} />
+        </Routes>
+      </MemoryRouter>
+    </TestApiProvider>,
+  );
+
+  expect(
+    await screen.findByRole('link', { name: 'ansible.posix' }),
+  ).toBeTruthy();
+  expect(screen.getByText('Unknown')).toBeTruthy();
+  expect(screen.queryByText('10 plugins')).toBeNull();
+});
 
 it('shows artifact overview, themed source and status, and controller actions', async () => {
   const writeText = jest.fn().mockResolvedValue(undefined);
@@ -129,6 +402,12 @@ it('shows artifact overview, themed source and status, and controller actions', 
           {
             getExecutionEnvironment: async () => ({
               ...image,
+              type: 'execution-environment',
+              classification: {
+                type: 'execution-environment',
+                confidence: 'likely',
+                signals: [],
+              },
               contentsKnown: false,
               counts: { collections: 0, plugins: 0 },
               tags: ['latest', '1.0'],
@@ -159,18 +438,20 @@ it('shows artifact overview, themed source and status, and controller actions', 
   expect(screen.getByText('1.0')).toBeTruthy();
   expect(screen.getByText('External registry')).toBeTruthy();
   expect(screen.getByText('Syncing')).toBeTruthy();
-  expect(screen.getByText('labels')).toBeTruthy();
+  expect(screen.getByText('Registry labels')).toBeTruthy();
+  expect(screen.getByText('Execution environment')).toBeTruthy();
+  expect(screen.queryByText(/likely/)).toBeNull();
   expect(screen.queryByText('Provenance')).toBeNull();
   await userEvent.click(
     screen.getByRole('button', { name: 'Actions for repo' }),
   );
   expect(
-    screen.getByRole('menuitem', { name: 'Use in controller' }),
+    screen.getByRole('menuitem', { name: 'Use in Controller' }),
   ).toBeTruthy();
   expect(screen.getByRole('menuitem', { name: 'Sync' })).toBeTruthy();
   expect(
-    screen.getByRole('menuitem', { name: 'Copy pull reference' }),
-  ).toBeTruthy();
+    screen.queryByRole('menuitem', { name: 'Copy pull reference' }),
+  ).toBeNull();
   expect(screen.getByRole('menuitem', { name: 'Favorite' })).toBeTruthy();
   await userEvent.click(screen.getByRole('menuitem', { name: 'Favorite' }));
   expect(toggleStarredEntity).toHaveBeenCalledWith(entity);
@@ -219,11 +500,11 @@ it('shows artifact overview, themed source and status, and controller actions', 
     screen.getByRole('button', { name: 'Actions for repo' }),
   );
   await userEvent.click(
-    screen.getByRole('menuitem', { name: 'Use in controller' }),
+    screen.getByRole('menuitem', { name: 'Use in Controller' }),
   );
   expect(await screen.findByRole('dialog')).toBeTruthy();
   await userEvent.click(
-    screen.getByRole('button', { name: 'Use in controller' }),
+    screen.getByRole('button', { name: 'Use in Controller' }),
   );
   expect((await screen.findByRole('alert')).textContent).toContain(
     'This action is not available yet. The task template was not found.',

@@ -1,14 +1,6 @@
 import { useEffect, useState, type ReactElement } from 'react';
 import SyncIcon from '@material-ui/icons/Sync';
-import {
-  Button,
-  Container,
-  Flex,
-  Tab,
-  TabList,
-  TabPanel,
-  Tabs,
-} from '@backstage/ui';
+import { Box, Button, Flex, Tab, TabList, TabPanel, Tabs } from '@backstage/ui';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   NotificationProvider,
@@ -24,6 +16,7 @@ import { CreateContent } from './CreateContent';
 import { DefinitionFilesCatalogPage } from './DefinitionFilesCatalogPage';
 import { ImagesCatalogPage } from './ImagesCatalogPage';
 import { PageHeaderSection } from '../common';
+import styles from './EECatalogPage.module.css';
 
 export type EECatalogView = 'images' | 'catalog' | 'create';
 
@@ -47,74 +40,82 @@ function EETabs({ view }: { view: EECatalogView }): ReactElement {
   }, [location.state, navigate, eeBase]);
 
   return (
-    <Container>
-      <Flex direction="column" gap="4">
-        <NotificationStack
-          notifications={notifications}
-          onClose={removeNotification}
-        />
-        <PageHeaderSection
-          title="Execution Environments"
-          description="Browse and manage execution environment images and definition files, or create a new EE definition for your automation workflows."
-          tooltip="Execution environment images and definition files available to the portal."
-          actions={
-            <>
+    <Box className={styles.pageFrame} data-testid="ee-catalog-frame">
+      <Box className={styles.pageSurface} data-testid="ee-catalog-surface">
+        <Flex
+          direction="column"
+          gap="4"
+          px="5"
+          py="3"
+          className={styles.pageContent}
+        >
+          <NotificationStack
+            notifications={notifications}
+            onClose={removeNotification}
+          />
+          <PageHeaderSection
+            title="Execution Environments"
+            description="Browse and manage execution environment images and definition files, or create a new EE definition for your automation workflows."
+            tooltip="Execution environment images and definition files available to the portal."
+            actions={
+              <>
+                {view === 'images' && (
+                  <RegistrySyncButton
+                    onStatus={setSyncStatus}
+                    onSynced={() => setSyncVersion(version => version + 1)}
+                  />
+                )}
+                {view !== 'images' && isSuperuser && (
+                  <Flex align="center" gap="2">
+                    <Button
+                      variant="secondary"
+                      iconStart={<SyncIcon />}
+                      onPress={() => setSyncDialogOpen(true)}
+                    >
+                      Sync Now
+                    </Button>
+                  </Flex>
+                )}
+              </>
+            }
+            status={syncStatus}
+          />
+          <Tabs
+            selectedKey={view}
+            onSelectionChange={key => navigate(`${eeBase}/${key}`)}
+          >
+            <TabList aria-label="Execution environment catalogs">
+              <Tab id="images">Execution environments</Tab>
+              <Tab id="catalog">Definition files</Tab>
+              <Tab id="create">Create</Tab>
+            </TabList>
+            <TabPanel id="images">
               {view === 'images' && (
-                <RegistrySyncButton
-                  onStatus={setSyncStatus}
-                  onSynced={() => setSyncVersion(version => version + 1)}
+                <ImagesCatalogPage
+                  key={syncVersion}
+                  showHeader={false}
+                  wrapInContainer={false}
                 />
               )}
-              {view !== 'images' && isSuperuser && (
-                <Flex align="center" gap="2">
-                  <Button
-                    variant="secondary"
-                    iconStart={<SyncIcon />}
-                    onPress={() => setSyncDialogOpen(true)}
-                  >
-                    Sync Now
-                  </Button>
-                </Flex>
-              )}
-            </>
-          }
-          status={syncStatus}
-        />
-        <Tabs
-          selectedKey={view}
-          onSelectionChange={key => navigate(`${eeBase}/${key}`)}
-        >
-          <TabList aria-label="Execution environment catalogs">
-            <Tab id="images">Execution environments</Tab>
-            <Tab id="catalog">Definition files</Tab>
-            <Tab id="create">Create</Tab>
-          </TabList>
-          <TabPanel id="images">
-            {view === 'images' && (
-              <ImagesCatalogPage
-                key={syncVersion}
-                showHeader={false}
-                wrapInContainer={false}
-              />
-            )}
-          </TabPanel>
-          <TabPanel id="catalog">
-            {view === 'catalog' && <DefinitionFilesCatalogPage />}
-          </TabPanel>
-          <TabPanel id="create">
-            {view === 'create' && <CreateContent />}
-          </TabPanel>
-        </Tabs>
-        <ImageSyncDialog
-          open={syncDialogOpen}
-          onClose={() => setSyncDialogOpen(false)}
-          onSynced={status => {
-            setSyncStatus(status);
-            setSyncVersion(version => version + 1);
-          }}
-        />
-      </Flex>
-    </Container>
+            </TabPanel>
+            <TabPanel id="catalog">
+              {view === 'catalog' && <DefinitionFilesCatalogPage />}
+            </TabPanel>
+            <TabPanel id="create">
+              {view === 'create' && <CreateContent />}
+            </TabPanel>
+          </Tabs>
+          <ImageSyncDialog
+            open={syncDialogOpen}
+            onClose={() => setSyncDialogOpen(false)}
+            onSynced={status => {
+              setSyncStatus(status);
+              setSyncVersion(version => version + 1);
+            }}
+          />
+        </Flex>
+      </Box>
+    </Box>
   );
 }
 

@@ -74,7 +74,7 @@ export function UseInControllerDialog({
       isOpen={open}
       onOpenChange={value => !value && !submitting && onClose()}
     >
-      <DialogHeader>Use in controller</DialogHeader>
+      <DialogHeader>Use in Controller</DialogHeader>
       <DialogBody>
         <Flex direction="column" gap="4">
           <Text color="secondary">
@@ -105,7 +105,7 @@ export function UseInControllerDialog({
           Cancel
         </Button>
         <Button onPress={handleSubmit} isPending={submitting}>
-          Use in controller
+          Use in Controller
         </Button>
       </DialogFooter>
     </Dialog>
