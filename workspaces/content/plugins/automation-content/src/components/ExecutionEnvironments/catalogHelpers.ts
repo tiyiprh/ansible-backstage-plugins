@@ -48,3 +48,25 @@ export function relativeTime(value?: string): string {
   }
   return `${amount} ${unit}${amount === 1 ? '' : 's'} ago`;
 }
+
+/**
+ * Row sync state, derived from the owning registry's last read. Wording follows
+ * the reviewed prototype: Available / Syncing / Failed. A "Stale" state does not
+ * exist in the backend yet.
+ */
+export function syncStateLabel(
+  lastReconciledAt?: string,
+  lastReconcileOk?: boolean,
+): string {
+  if (!lastReconciledAt) return 'Syncing';
+  if (lastReconcileOk === false) return 'Failed';
+  return 'Available';
+}
+
+/**
+ * Where the artifact came from. Registry scans are the only source today; a
+ * "Definition file" source arrives with that integration.
+ */
+export function sourceLabel(registry?: string): string {
+  return registry ? 'External registry' : 'Definition file';
+}

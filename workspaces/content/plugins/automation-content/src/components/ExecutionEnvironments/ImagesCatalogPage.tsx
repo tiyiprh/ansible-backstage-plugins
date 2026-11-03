@@ -38,6 +38,7 @@ import {
   imageContentsSummary,
   matchesEnvironment,
   relativeTime,
+  syncStateLabel,
 } from './catalogHelpers';
 import styles from './details.module.css';
 
@@ -81,16 +82,6 @@ export function ImagesCatalogPage({
   const contentLabel = (image: ExecutionEnvironment): string => {
     if (!image.contentsKnown) return 'unknown';
     return image.enumeration.status === 'complete' ? 'known' : 'approximate';
-  };
-
-  /** Row sync state, derived from the owning registry's last read. */
-  const syncStateLabel = (
-    lastReconciledAt?: string,
-    lastReconcileOk?: boolean,
-  ): string => {
-    if (!lastReconciledAt) return 'Pending';
-    if (lastReconcileOk === false) return 'Sync failed';
-    return 'Synced';
   };
 
   const data = useMemo(
