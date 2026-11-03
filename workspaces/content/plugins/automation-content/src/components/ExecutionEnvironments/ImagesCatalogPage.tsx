@@ -71,7 +71,9 @@ function syncStatusTone(status: string): StatusBadgeTone {
 function imageSourceLabel(
   registry: string,
   metadata: NonNullable<ReturnType<typeof getDemoImageMetadata>> | undefined,
+  definitionEntityRef?: string,
 ): string {
+  if (definitionEntityRef) return 'Definition file';
   if (metadata?.sourceType === 'definition-file') return 'Definition file';
   if (metadata?.sourceType === 'external-registry') return 'External registry';
   return sourceLabel(registry);
@@ -205,7 +207,11 @@ export function ImagesCatalogPage({
       label: 'Source',
       cell: row => {
         const demoMetadata = getDemoImageMetadata(row.ref);
-        const source = imageSourceLabel(row.registry, demoMetadata);
+        const source = imageSourceLabel(
+          row.registry,
+          demoMetadata,
+          row.definitionEntityRef,
+        );
         return (
           <Cell>
             <Flex direction="column" align="start" gap="1">

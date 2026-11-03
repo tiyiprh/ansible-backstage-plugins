@@ -5,6 +5,11 @@ import {
   mockApis,
 } from '@backstage/test-utils';
 import { permissionApiRef } from '@backstage/plugin-permission-react';
+import {
+  catalogApiRef,
+  MockStarredEntitiesApi,
+  starredEntitiesApiRef,
+} from '@backstage/plugin-catalog-react';
 import { Link, Route, Routes } from 'react-router-dom';
 import {
   automationContentApiRef,
@@ -31,6 +36,9 @@ jest.mock('../ContentItemDocumentation', () => ({
     </h1>
   ),
 }));
+jest.mock('@ansible/portal-plugin-sdk', () => ({
+  useIsSuperuser: () => ({ isSuperuser: true }),
+}));
 
 const first: Collection = {
   namespace: 'ns',
@@ -46,10 +54,67 @@ const items = [
   { ...first, providedBy: ['r/ee@sha256:two'] },
   { ...first, version: '1.10.0' },
 ];
+const catalogEntities = [
+  {
+    apiVersion: 'backstage.io/v1alpha1',
+    kind: 'Component',
+    metadata: {
+      name: 'collection-ee-name_with-dots-1-9-0',
+      namespace: 'default',
+      annotations: {
+        'ansible.com/collection': 'ns.name_with.dots',
+        'ansible.com/version': '1.9.0',
+      },
+      tags: ['ansible-collection', 'eda'],
+    },
+    spec: { type: 'ansible-collection' },
+  },
+  {
+    apiVersion: 'backstage.io/v1alpha1',
+    kind: 'Component',
+    metadata: {
+      name: 'collection-ee-two-name_with-dots-1-9-0',
+      namespace: 'default',
+      annotations: {
+        'ansible.com/collection': 'ns.name_with.dots',
+        'ansible.com/version': '1.9.0',
+      },
+      tags: ['ansible-collection', 'eda'],
+    },
+    spec: { type: 'ansible-collection' },
+  },
+  {
+    apiVersion: 'backstage.io/v1alpha1',
+    kind: 'Component',
+    metadata: {
+      name: 'collection-ee-name_with-dots-1-10-0',
+      namespace: 'default',
+      annotations: {
+        'ansible.com/collection': 'ns.name_with.dots',
+        'ansible.com/version': '1.10.0',
+      },
+      tags: ['ansible-collection', 'eda'],
+    },
+    spec: { type: 'ansible-collection' },
+  },
+];
 const api = {
   listCollections: jest.fn(async (query?: string) =>
     query === 'missing' ? [] : items,
   ),
+  listRegistries: jest.fn(async () => [
+    {
+      name: 'r',
+      url: 'https://registry.example.test',
+      lastReconciledAt: new Date().toISOString(),
+      lastReconcileOk: true,
+    },
+  ]),
+  syncAll: jest.fn(async () => ({
+    status: 'completed' as const,
+    durationMs: 10,
+    registries: [{ registry: 'r', ok: true, discovered: 3 }],
+  })),
   searchContentItems: jest.fn(
     async (): Promise<{ totalItems: number; items: ContentItemSummary[] }> => ({
       totalItems: 0,
@@ -57,17 +122,26 @@ const api = {
     }),
   ),
 };
+const catalogApi = {
+  queryEntities: jest.fn(async () => ({
+    items: catalogEntities,
+    totalItems: catalogEntities.length,
+    pageInfo: {},
+  })),
+};
 
 beforeEach(() => {
   jest.clearAllMocks();
 });
 
-function mount(path: string) {
+function mount(path: string, starredApi = new MockStarredEntitiesApi()) {
   return renderInTestApp(
     <TestApiProvider
       apis={[
         [permissionApiRef, mockApis.permission()],
         [automationContentApiRef, api],
+        [catalogApiRef, catalogApi],
+        [starredEntitiesApiRef, starredApi],
       ]}
     >
       <Routes>
@@ -87,15 +161,58 @@ function mount(path: string) {
   );
 }
 
-it('shows a single card, computed latest, fallback description and both digest links', async () => {
+it('shows a compact latest-version card without provider digests', async () => {
   await mount('/');
-  expect(await screen.findByText('Latest: 1.10.0')).toBeTruthy();
-  expect(screen.getAllByText('ns.name_with.dots')).toHaveLength(1);
-  expect(screen.getByText('No description available.')).toBeTruthy();
-  expect(screen.getByText('Page 1 of 1')).toBeTruthy();
   expect(
-    screen.getByRole('link', { name: 'r/ee@sha256:two' }).getAttribute('href'),
-  ).toContain('r%2Fee%40sha256%3Atwo');
+    await screen.findByRole('heading', { level: 1, name: 'Collections' }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole('button', { name: 'About collections' }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole('region', { name: 'Collections catalog' }),
+  ).toBeTruthy();
+  expect(
+    await screen.findByRole('link', { name: 'ns.name_with.dots' }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole('heading', {
+      level: 2,
+      name: 'Ansible collections (1)',
+    }),
+  ).toBeTruthy();
+  expect(screen.getByText('v1.10.0')).toBeTruthy();
+  expect(screen.getByRole('group', { name: 'Source' }).textContent).toContain(
+    'External registry',
+  );
+  expect(screen.queryByRole('group', { name: 'Repository' })).toBeNull();
+  expect(
+    screen.getByRole('button', { name: 'All sources Source type' }),
+  ).toBeTruthy();
+  expect(screen.queryByRole('button', { name: /All registries/ })).toBeNull();
+  expect(screen.queryByText('r/ee@sha256:two')).toBeNull();
+  expect(screen.getByText('Page 1 of 1')).toBeTruthy();
+  expect(api.listRegistries).toHaveBeenCalledTimes(1);
+  expect(catalogApi.queryEntities).toHaveBeenCalledWith(
+    expect.objectContaining({
+      limit: 1000,
+      query: expect.objectContaining({
+        $all: expect.arrayContaining([
+          expect.objectContaining({
+            'metadata.annotations.ansible.com/collection': {
+              $in: ['ns.name_with.dots'],
+            },
+          }),
+          expect.objectContaining({
+            'metadata.annotations.ansible.com/version': {
+              $in: expect.arrayContaining(['1.9.0', '1.10.0']),
+            },
+          }),
+        ]),
+      }),
+      fields: expect.arrayContaining(['metadata.annotations', 'metadata.tags']),
+    }),
+  );
   fireEvent.change(screen.getByRole('searchbox'), {
     target: { value: 'missing' },
   });
@@ -122,20 +239,86 @@ it('reuses the collection list when navigating between collection details', asyn
 
 it('shows all computed versions when latest-only is turned off', async () => {
   await mount('/');
-  await screen.findByText('Latest: 1.10.0');
+  await screen.findByText('v1.10.0');
   fireEvent.click(
     screen.getByRole('checkbox', { name: 'Show latest version only' }),
   );
-  expect(screen.getByText('v1.9.0')).toBeTruthy();
+  expect(screen.getAllByText('v1.9.0')).toHaveLength(1);
   expect(screen.getByText('v1.10.0')).toBeTruthy();
   expect(
     screen
-      .getAllByRole('link', { name: 'View ns.name_with.dots details' })
+      .getAllByRole('link', { name: 'ns.name_with.dots' })
       .map(link => link.getAttribute('href')),
   ).toEqual([
-    expect.stringContaining('version=1.10.0'),
-    expect.stringContaining('version=1.9.0'),
+    '/content/collections/ns/name_with.dots?version=1.10.0',
+    '/content/collections/ns/name_with.dots?version=1.9.0',
   ]);
+});
+
+it('uses exact collection catalog identities for real favorites and tag facets', async () => {
+  const starredApi = new MockStarredEntitiesApi();
+  await starredApi.toggleStarred(
+    'component:default/collection-ee-name_with-dots-1-10-0',
+  );
+  await mount('/', starredApi);
+
+  expect(
+    await screen.findByRole('button', { name: 'Favorites, 1' }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole('button', {
+      name: /Remove ns.name_with.dots v1.10.0 from favorites/,
+    }),
+  ).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Favorites, 1' }));
+  expect(
+    await screen.findByRole('heading', { name: 'Ansible collections (1)' }),
+  ).toBeTruthy();
+  expect(screen.getByText('v1.10.0')).toBeTruthy();
+  expect(screen.queryByText('v1.9.0')).toBeNull();
+});
+
+it('reports successful registry sync from the real sync API', async () => {
+  await mount('/');
+  await screen.findByRole('link', { name: 'ns.name_with.dots' });
+  fireEvent.click(screen.getByRole('button', { name: 'Sync Now' }));
+  expect(
+    await screen.findByText('Sync completed: 1 registries checked.'),
+  ).toBeTruthy();
+  expect(api.syncAll).toHaveBeenCalledTimes(1);
+});
+
+it('reports partial registry sync results without masking the failed source', async () => {
+  api.syncAll.mockResolvedValueOnce({
+    status: 'partial',
+    durationMs: 20,
+    registries: [
+      {
+        registry: 'r',
+        ok: false,
+        discovered: 0,
+        error: 'Registry unavailable',
+      },
+    ],
+  });
+  await mount('/');
+  await screen.findByRole('link', { name: 'ns.name_with.dots' });
+  fireEvent.click(screen.getByRole('button', { name: 'Sync Now' }));
+  expect(
+    await screen.findByText(
+      'Sync partially completed: 0 of 1 registries succeeded. Failed: r.',
+    ),
+  ).toBeTruthy();
+});
+
+it('surfaces a rejected sync request as an error', async () => {
+  api.syncAll.mockRejectedValueOnce(new Error('Content service unavailable'));
+  await mount('/');
+  await screen.findByRole('link', { name: 'ns.name_with.dots' });
+  fireEvent.click(screen.getByRole('button', { name: 'Sync Now' }));
+  expect(
+    await screen.findByText('Sync failed: Content service unavailable'),
+  ).toBeTruthy();
 });
 
 it('shows an error rather than an empty catalog when loading fails', async () => {

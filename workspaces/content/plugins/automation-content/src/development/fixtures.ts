@@ -42,6 +42,9 @@ export function createDemoImages(now = Date.now()): ExecutionEnvironment[] {
     const incompleteStatus = index === 2 ? 'partial' : 'unknown';
     return {
       ref,
+      ...(variant === 'definition-file'
+        ? { definitionEntityRef: 'component:default/networking-ee' }
+        : {}),
       type: 'execution-environment',
       registry: `demo-utopia-${variant}`,
       repository: `demo/utopia-${variant}`,

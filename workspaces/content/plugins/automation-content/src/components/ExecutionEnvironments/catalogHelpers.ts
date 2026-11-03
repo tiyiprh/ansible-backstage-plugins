@@ -1,4 +1,4 @@
-import type { Entity } from '@backstage/catalog-model';
+import { parseEntityRef, type Entity } from '@backstage/catalog-model';
 import type { ExecutionEnvironment } from '../../api';
 
 /** Reconciliation results older than this are displayed as stale. */
@@ -21,6 +21,48 @@ export function matchesEnvironment(
 /** Preserve the full digest-scoped reference in one URL segment. */
 export function environmentHref(base: string, ref: string): string {
   return `${base}/${encodeURIComponent(ref)}`;
+}
+
+function parseDefinitionEntityRef(
+  entityRef: string,
+): { namespace: string; name: string } | undefined {
+  const trimmed = entityRef.trim();
+  const kindSeparator = trimmed.indexOf(':');
+  const namespaceSeparator = trimmed.indexOf('/', kindSeparator + 1);
+  if (
+    trimmed !== entityRef ||
+    kindSeparator <= 0 ||
+    namespaceSeparator <= kindSeparator + 1 ||
+    namespaceSeparator === trimmed.length - 1
+  ) {
+    return undefined;
+  }
+
+  try {
+    const parsed = parseEntityRef(trimmed);
+    if (parsed.kind.toLowerCase() !== 'component') return undefined;
+    return { namespace: parsed.namespace, name: parsed.name };
+  } catch {
+    return undefined;
+  }
+}
+
+/** Resolve a stable Component ref to its local definition-file details route. */
+export function definitionFileHref(
+  base: string,
+  entityRef: string,
+): string | undefined {
+  const parsed = parseDefinitionEntityRef(entityRef);
+  const root = base.replace(/\/+$/, '');
+  if (!root || !parsed) return undefined;
+  return `${root}/catalog/${encodeURIComponent(
+    parsed.namespace,
+  )}/${encodeURIComponent(parsed.name)}`;
+}
+
+/** Display the entity name for an explicit definition-file ref, if it is valid. */
+export function definitionFileName(entityRef: string): string | undefined {
+  return parseDefinitionEntityRef(entityRef)?.name;
 }
 
 /** Unknown inventories must never imply that an image contains no content. */

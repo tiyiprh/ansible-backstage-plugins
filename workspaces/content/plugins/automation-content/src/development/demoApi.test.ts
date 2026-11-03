@@ -56,6 +56,7 @@ function inventorySetup() {
   const source: ExecutionEnvironment = {
     ...rows[0],
     ref: sourceRef,
+    definitionEntityRef: 'component:default/source-only',
     contentsKnown: true,
     enumeration,
     counts: { collections: 1, plugins: 1 },
@@ -105,6 +106,9 @@ it('reuses actual inventory for backed variants, preserving each identity and un
     expect(image.collections).toEqual(source.collections);
     expect(image.enumeration).toEqual(source.enumeration);
     expect(image.repository).toBe(createDemoImages()[index].repository);
+    expect(image.definitionEntityRef).toBe(
+      createDemoImages()[index].definitionEntityRef,
+    );
     expect(page.items[index].counts).toEqual(source.counts);
     expect((await api.getContents(image.ref)).items).toHaveLength(1);
   }

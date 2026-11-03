@@ -143,7 +143,7 @@ it.each([
         screen.queryByRole('columnheader', { name: countColumn }),
       ).toBeNull();
     }
-    expect(screen.getAllByText('Not reported')).toHaveLength(4);
+    expect(screen.getAllByText('—')).toHaveLength(4);
     expect(screen.queryByText('Certified')).toBeNull();
     expect(screen.queryByText('Signed')).toBeNull();
   },
@@ -271,9 +271,51 @@ it('shows populated image metadata without leaking missing classification confid
   expect(screen.getByText('6 collections / 457 plugins')).toBeTruthy();
   expect(screen.getByText('Unknown')).toBeTruthy();
   expect(screen.getByText(pullReference)).toBeTruthy();
+  expect(screen.queryByRole('link', { name: 'networking-ee' })).toBeNull();
   expect(container.querySelectorAll('.bui-Card')).toHaveLength(1);
   expect(screen.queryByText(/undefined/)).toBeNull();
   expect(screen.queryByText(/confidence/i)).toBeNull();
+});
+
+it('links to definition details only for an explicit component entity ref', async () => {
+  const definitionImage: ExecutionEnvironment = {
+    ...image,
+    definitionEntityRef: 'component:team+one/networking+ee',
+  };
+  render(
+    <TestApiProvider
+      apis={[
+        [catalogApiRef, { getEntities: async () => ({ items: [] }) }],
+        [
+          automationContentApiRef,
+          {
+            getExecutionEnvironment: async () => definitionImage,
+            getContents: async () => ({
+              enumeration: definitionImage.enumeration,
+              collections: [],
+              items: [],
+            }),
+          },
+        ],
+      ]}
+    >
+      <MemoryRouter
+        initialEntries={[`/${encodeURIComponent(definitionImage.ref)}`]}
+      >
+        <Routes>
+          <Route path=":ref" element={<EEDetailsPage />} />
+        </Routes>
+      </MemoryRouter>
+    </TestApiProvider>,
+  );
+
+  const definitionLink = await screen.findByRole('link', {
+    name: 'networking+ee',
+  });
+  expect(definitionLink.getAttribute('href')).toBe(
+    '/content/catalog/team%2Bone/networking%2Bee',
+  );
+  expect(screen.getAllByText('Definition file').length).toBeGreaterThan(0);
 });
 
 it('combines only reported collection content counts and marks missing metadata', async () => {
@@ -327,9 +369,61 @@ it('combines only reported collection content counts and marks missing metadata'
     await screen.findByRole('link', { name: 'ansible.posix' }),
   ).toBeTruthy();
   expect(screen.getByText('48 plugins, 5 roles, 3 playbooks')).toBeTruthy();
-  expect(screen.getAllByText('Not reported')).toHaveLength(4);
+  expect(screen.getAllByText('—')).toHaveLength(4);
   expect(screen.queryByText(/0 (plugins|roles|playbooks)/)).toBeNull();
   expect(getContents).toHaveBeenCalledWith(image.ref);
+});
+
+it('uses an em dash when a complete inventory reports no content counts', async () => {
+  const enumeration: Enumeration = {
+    status: 'complete',
+    source: 'build-time-manifest',
+  };
+  const completeImage: ExecutionEnvironment = {
+    ...image,
+    contentsKnown: true,
+    enumeration,
+  };
+  render(
+    <TestApiProvider
+      apis={[
+        [catalogApiRef, { getEntities: async () => ({ items: [] }) }],
+        [
+          automationContentApiRef,
+          {
+            getExecutionEnvironment: async () => completeImage,
+            getContents: async () => ({
+              enumeration,
+              collections: [
+                {
+                  namespace: 'ansible',
+                  name: 'posix',
+                  fqcn: 'ansible.posix',
+                  version: '2.0.0',
+                  counts: {},
+                },
+              ],
+              items: [],
+            }),
+          },
+        ],
+      ]}
+    >
+      <MemoryRouter
+        initialEntries={[`/${encodeURIComponent(image.ref)}?tab=collections`]}
+      >
+        <Routes>
+          <Route path=":ref" element={<EEDetailsPage />} />
+        </Routes>
+      </MemoryRouter>
+    </TestApiProvider>,
+  );
+
+  expect(
+    await screen.findByRole('link', { name: 'ansible.posix' }),
+  ).toBeTruthy();
+  expect(screen.getAllByText('—')).toHaveLength(5);
+  expect(screen.queryByText('Unknown')).toBeNull();
 });
 
 it('keeps collection contents unknown when the image inventory is unknown', async () => {

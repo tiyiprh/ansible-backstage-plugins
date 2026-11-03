@@ -16,6 +16,7 @@ import {
   CellText,
   Container,
   Flex,
+  Link,
   Menu,
   MenuItem,
   MenuTrigger,
@@ -43,6 +44,8 @@ import MoreVertIcon from '@material-ui/icons/MoreVert';
 import FileCopyIcon from '@material-ui/icons/FileCopy';
 import {
   environmentHref,
+  definitionFileHref,
+  definitionFileName,
   imageContentsSummary,
   matchesEnvironment,
   relativeTime,
@@ -116,7 +119,7 @@ function collectionContentsSummary(
   });
 
   if (!reportedCounts.length) {
-    return approximate ? 'Approximate: Not reported' : 'Not reported';
+    return approximate ? 'Approximate: —' : '—';
   }
   return `${approximate ? 'Approximate: ' : ''}${reportedCounts.join(', ')}`;
 }
@@ -161,7 +164,9 @@ function inventoryStatusLabel(status: string): string {
 function imageSourceLabel(
   registry: string,
   metadata: NonNullable<ReturnType<typeof getDemoImageMetadata>> | undefined,
+  definitionEntityRef?: string,
 ): string {
+  if (definitionEntityRef) return 'Definition file';
   if (metadata?.sourceType === 'definition-file') return 'Definition file';
   if (metadata?.sourceType === 'external-registry') return 'External registry';
   return sourceLabel(registry);
@@ -268,22 +273,22 @@ export function EEDetailsPage(): ReactElement {
     {
       id: 'status',
       label: 'Status',
-      cell: () => <CellText title="Not reported" />,
+      cell: () => <CellText title="—" />,
     },
     {
       id: 'publisher',
       label: 'Publisher',
-      cell: () => <CellText title="Not reported" />,
+      cell: () => <CellText title="—" />,
     },
     {
       id: 'signing',
       label: 'Signing',
-      cell: () => <CellText title="Not reported" />,
+      cell: () => <CellText title="—" />,
     },
     {
       id: 'source',
       label: 'Source',
-      cell: () => <CellText title="Not reported" />,
+      cell: () => <CellText title="—" />,
     },
     {
       id: 'contents',
@@ -306,6 +311,12 @@ export function EEDetailsPage(): ReactElement {
   const value = image.value;
   const entity =
     value && entities.value?.items.find(e => matchesEnvironment(e, value));
+  const definitionHref = value?.definitionEntityRef
+    ? definitionFileHref(base, value.definitionEntityRef)
+    : undefined;
+  const definitionName = value?.definitionEntityRef
+    ? definitionFileName(value.definitionEntityRef)
+    : undefined;
   const classification = classificationLabel(
     value?.classification?.type ?? value?.type,
   );
@@ -481,16 +492,34 @@ export function EEDetailsPage(): ReactElement {
                       <Flex direction="column" align="start" gap="1">
                         <StatusBadge
                           tone={
-                            imageSourceLabel(value.registry, demoMetadata) ===
-                            'Definition file'
+                            imageSourceLabel(
+                              value.registry,
+                              demoMetadata,
+                              value.definitionEntityRef,
+                            ) === 'Definition file'
                               ? 'info'
                               : 'neutral'
                           }
                         >
-                          {imageSourceLabel(value.registry, demoMetadata)}
+                          {imageSourceLabel(
+                            value.registry,
+                            demoMetadata,
+                            value.definitionEntityRef,
+                          )}
                         </StatusBadge>
                       </Flex>
                     </MetadataRow>
+                    {definitionHref && definitionName && (
+                      <MetadataRow label="Definition file">
+                        <Link
+                          href={definitionHref}
+                          color="info"
+                          className={styles.infoLink}
+                        >
+                          {definitionName}
+                        </Link>
+                      </MetadataRow>
+                    )}
                     <MetadataRow label="Tags">
                       <Flex gap="2" className={styles.wrapFlex}>
                         {value.tags.length ? (

@@ -1,14 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
+import { useSearchParams } from 'react-router-dom';
 // Subpath import: the package barrel re-exports the OCI client, which uses
 // Node built-ins that cannot enter a browser bundle.
 import { isHttpUrl } from '@ansible/automation-content-common/url';
-import { ANNOTATION_EDIT_URL, Entity } from '@backstage/catalog-model';
+import {
+  ANNOTATION_EDIT_URL,
+  parseEntityRef,
+  type Entity,
+} from '@backstage/catalog-model';
 import { useApi, useRouteRef } from '@backstage/core-plugin-api';
 import {
   catalogApiRef,
   EntityKindFilter,
-  EntityListProvider,
   EntityOwnerFilter,
   EntityTagFilter,
   EntityTextFilter,
@@ -16,8 +20,8 @@ import {
   EntityUserFilter,
   entityRouteParams,
   entityRouteRef,
-  useEntityList,
   useStarredEntities,
+  type DefaultEntityFilters,
 } from '@backstage/plugin-catalog-react';
 import {
   Badge,
@@ -49,41 +53,99 @@ import { useEEBuildFlow } from './useEEBuildFlow';
 
 const PAGE_SIZE = 10;
 
-function ExecutionEnvironmentTypeFilter() {
-  const { filters, updateFilters } = useEntityList();
-  const { type } = filters;
-  useEffect(() => {
-    if (!type)
-      updateFilters(prev => ({
-        ...prev,
-        kind: new EntityKindFilter('Component', 'Component'),
-        type: new EntityTypeFilter(['execution-environment']),
-      }));
-  }, [type, updateFilters]);
-  return null;
+const DEFINITION_FILE_QUERY = {
+  $not: {
+    'metadata.annotations.ansible.com/digest': { $exists: true },
+  },
+} as const;
+
+function isDefinitionFileEntity(entity: Entity): boolean {
+  return entity.metadata.annotations?.['ansible.com/digest'] === undefined;
+}
+
+function catalogFilterFromEntityFilters(
+  filters: DefaultEntityFilters,
+): Record<string, string | symbol | (string | symbol)[]> {
+  return Object.values(filters).reduce<
+    Record<string, string | symbol | (string | symbol)[]>
+  >((combined, filter) => {
+    if (
+      !filter ||
+      (filter instanceof EntityUserFilter && filter.value === 'starred')
+    ) {
+      return combined;
+    }
+    return Object.assign(combined, filter.getCatalogFilters?.() ?? {});
+  }, {});
+}
+
+function starredEntityPredicates(
+  refs: string[],
+): Array<Record<string, string>> {
+  return refs.flatMap(ref => {
+    try {
+      const parsed = parseEntityRef(ref);
+      return [
+        {
+          kind: parsed.kind,
+          'metadata.namespace': parsed.namespace,
+          'metadata.name': parsed.name,
+        },
+      ];
+    } catch {
+      return [];
+    }
+  });
 }
 
 /** Port of the prototype's offset-paged catalog and row action flows. */
 export function EEListPage({
   onTabSwitch,
+  getDefinitionFileHref,
 }: {
   onTabSwitch: (index: number) => void;
+  getDefinitionFileHref?: (entity: Entity) => string | undefined;
 }): ReactElement {
   const catalogApi = useApi(catalogApiRef);
   const entityHref = useRouteRef(entityRouteRef);
-  const {
-    filters,
-    entities: rawEntities,
-    loading: catalogLoading,
-    error,
-    totalItems,
-    limit,
-    offset,
-    setLimit,
-    setOffset,
-    updateFilters,
-  } = useEntityList();
-  const entities = useMemo(() => rawEntities ?? [], [rawEntities]);
+  const [filters, setFilters] = useState<DefaultEntityFilters>(() => ({
+    kind: new EntityKindFilter('Component', 'Component'),
+    type: new EntityTypeFilter(['execution-environment']),
+    user: EntityUserFilter.all(),
+  }));
+  const [entities, setEntities] = useState<Entity[]>([]);
+  const [totalItems, setTotalItems] = useState(0);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [error, setError] = useState<Error>();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [limit, setLimit] = useState(() => {
+    const parsed = Number.parseInt(searchParams.get('limit') ?? '', 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : PAGE_SIZE;
+  });
+  const [offset, setOffset] = useState(() => {
+    const parsed = Number.parseInt(searchParams.get('offset') ?? '', 10);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+  });
+  const [refreshVersion, setRefreshVersion] = useState(0);
+  const requestVersionRef = useRef(0);
+  const updateFilters = useCallback(
+    (
+      updates:
+        | Partial<DefaultEntityFilters>
+        | ((previous: DefaultEntityFilters) => Partial<DefaultEntityFilters>),
+    ) => {
+      setFilters(previous => ({
+        ...previous,
+        ...(typeof updates === 'function' ? updates(previous) : updates),
+      }));
+      setOffset(0);
+    },
+    [],
+  );
+  const handlePageSizeChange = useCallback((newLimit: number) => {
+    setOffset(0);
+    setLimit(newLimit);
+  }, []);
   const {
     starredEntities = new Set<string>(),
     isStarredEntity,
@@ -91,6 +153,90 @@ export function EEListPage({
   } = useStarredEntities();
   const prevStarredSizeRef = useRef(starredEntities.size);
   const hasEverHadEntitiesRef = useRef(false);
+  const updateRefreshVersion = useCallback(
+    () => setRefreshVersion(version => version + 1),
+    [],
+  );
+  useEffect(() => {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('limit', String(limit));
+    if (offset > 0) nextParams.set('offset', String(offset));
+    else nextParams.delete('offset');
+    if (nextParams.toString() !== searchParams.toString()) {
+      setSearchParams(nextParams, { replace: true });
+    }
+  }, [limit, offset, searchParams, setSearchParams]);
+  useEffect(() => {
+    let cancelled = false;
+    const requestVersion = ++requestVersionRef.current;
+    const starredEntityFilter =
+      filters.user instanceof EntityUserFilter &&
+      filters.user.value === 'starred'
+        ? filters.user
+        : undefined;
+    const starredPredicates = starredEntityFilter
+      ? starredEntityPredicates(starredEntityFilter.refs ?? [])
+      : undefined;
+    const query = starredPredicates
+      ? {
+          $all: [DEFINITION_FILE_QUERY, { $any: starredPredicates }],
+        }
+      : DEFINITION_FILE_QUERY;
+
+    if (starredPredicates && starredPredicates.length === 0) {
+      setEntities([]);
+      setTotalItems(0);
+      setError(undefined);
+      setCatalogLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setCatalogLoading(true);
+    setError(undefined);
+    void catalogApi
+      .queryEntities({
+        filter: catalogFilterFromEntityFilters(filters),
+        query,
+        fullTextFilter: filters.text?.getFullTextFilters(),
+        orderFields: [{ field: 'metadata.name', order: 'asc' }],
+        limit,
+        offset,
+      })
+      .then(response => {
+        if (cancelled || requestVersion !== requestVersionRef.current) return;
+        setEntities(
+          response.items
+            .filter(isDefinitionFileEntity)
+            .filter(entity =>
+              Object.values(filters).every(
+                filter => !filter?.filterEntity || filter.filterEntity(entity),
+              ),
+            ),
+        );
+        setTotalItems(response.totalItems);
+      })
+      .catch(fetchError => {
+        if (cancelled || requestVersion !== requestVersionRef.current) return;
+        setEntities([]);
+        setTotalItems(0);
+        setError(
+          fetchError instanceof Error
+            ? fetchError
+            : new Error(String(fetchError)),
+        );
+      })
+      .finally(() => {
+        if (!cancelled && requestVersion === requestVersionRef.current) {
+          setCatalogLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [catalogApi, filters, limit, offset, refreshVersion]);
   useEffect(() => {
     if (filters.user?.value === 'starred') {
       if (starredEntities.size > 0)
@@ -120,6 +266,7 @@ export function EEListPage({
     catalogApi
       .getEntityFacets({
         filter: { kind: 'Component', 'spec.type': 'execution-environment' },
+        query: DEFINITION_FILE_QUERY,
         facets: ['spec.owner', 'metadata.tags'],
       })
       .then(response => {
@@ -197,7 +344,8 @@ export function EEListPage({
     setTagFilter('All');
     setOwnerNames(new Map());
     updateFilters({ owners: undefined, tags: undefined });
-  }, [updateFilters]);
+    updateRefreshVersion();
+  }, [updateFilters, updateRefreshVersion]);
   const [entityToUnregister, setEntityToUnregister] = useState<Entity | null>(
     null,
   );
@@ -222,7 +370,11 @@ export function EEListPage({
       cell: entity => (
         <CellText
           title={entity.metadata.name}
-          href={entityHref(entityRouteParams(entity))}
+          href={
+            getDefinitionFileHref
+              ? getDefinitionFileHref(entity)
+              : entityHref(entityRouteParams(entity))
+          }
         />
       ),
     },
@@ -379,7 +531,6 @@ export function EEListPage({
   const page = offset && limit ? Math.floor(offset / limit) : 0;
   return (
     <Flex direction="column" gap="4">
-      <ExecutionEnvironmentTypeFilter />
       {hasEntities ? (
         <>
           <Text variant="body-large" as="p" color="secondary">
@@ -453,12 +604,9 @@ export function EEListPage({
                     totalCount,
                     hasNextPage: (page + 1) * limit < totalCount,
                     hasPreviousPage: page > 0,
-                    onNextPage: () => setOffset?.((page + 1) * limit),
-                    onPreviousPage: () => setOffset?.((page - 1) * limit),
-                    onPageSizeChange: newLimit => {
-                      setOffset?.(0);
-                      setLimit?.(newLimit);
-                    },
+                    onNextPage: () => setOffset((page + 1) * limit),
+                    onPreviousPage: () => setOffset((page - 1) * limit),
+                    onPageSizeChange: handlePageSizeChange,
                   }}
                 />
               </Flex>
@@ -488,15 +636,18 @@ export function EEListPage({
   );
 }
 
-/** Catalog filter provider retains the prototype's backend offset pagination. */
+/** Catalog listing with backend-paginated exclusion of registry-backed images. */
 export function EntityCatalogContent({
   onTabSwitch,
+  getDefinitionFileHref,
 }: {
   onTabSwitch: (index: number) => void;
+  getDefinitionFileHref?: (entity: Entity) => string | undefined;
 }): ReactElement {
   return (
-    <EntityListProvider pagination={{ mode: 'offset', limit: PAGE_SIZE }}>
-      <EEListPage onTabSwitch={onTabSwitch} />
-    </EntityListProvider>
+    <EEListPage
+      onTabSwitch={onTabSwitch}
+      getDefinitionFileHref={getDefinitionFileHref}
+    />
   );
 }

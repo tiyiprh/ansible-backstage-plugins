@@ -1,4 +1,8 @@
-import type { Collection, ContentCounts } from '../../api';
+import type { Collection, ContentCounts, Registry } from '../../api';
+import type { Entity } from '@backstage/catalog-model';
+
+const COLLECTION_ANNOTATION = 'ansible.com/collection';
+const COLLECTION_VERSION_ANNOTATION = 'ansible.com/version';
 
 /** Only expose navigable web sources; registry repository names remain labels. */
 export function collectionSourceHref(repository?: string): string | undefined {
@@ -99,4 +103,102 @@ export function collectionHref(
   name: string,
 ): string {
   return `${base}/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`;
+}
+
+export function collectionIdentityKey(fqcn: string, version: string): string {
+  return `${fqcn.toLowerCase()}\u0000${version}`;
+}
+
+/** Match only the collection and version annotations emitted by the OCI provider. */
+export function collectionIdentityFromEntity(
+  entity: Entity | undefined,
+): { fqcn: string; version: string } | undefined {
+  if (!entity || entity.kind.toLowerCase() !== 'component') return undefined;
+  const annotations = entity.metadata.annotations ?? {};
+  const fqcn = annotations[COLLECTION_ANNOTATION];
+  const version = annotations[COLLECTION_VERSION_ANNOTATION];
+  if (typeof fqcn !== 'string' || !fqcn || typeof version !== 'string') {
+    return undefined;
+  }
+  return { fqcn, version };
+}
+
+/** Return a registry only when a provider reference has the backend's ref shape and exact name. */
+export function registryForProviderRef(
+  providerRef: string,
+  registries: Registry[],
+): Registry | undefined {
+  const slashIndex = providerRef.indexOf('/');
+  const digestIndex = providerRef.lastIndexOf('@sha256:');
+  if (
+    slashIndex <= 0 ||
+    digestIndex <= slashIndex + 1 ||
+    digestIndex + '@sha256:'.length >= providerRef.length
+  ) {
+    return undefined;
+  }
+
+  const repository = providerRef.slice(slashIndex + 1, digestIndex);
+  const digest = providerRef.slice(digestIndex + '@sha256:'.length);
+  if (!repository || digest.includes('/') || /\s/.test(providerRef)) {
+    return undefined;
+  }
+
+  const name = providerRef.slice(0, slashIndex);
+  return registries.find(registry => registry.name === name);
+}
+
+export function registriesForProviders(
+  providerRefs: string[],
+  registries: Registry[],
+): Registry[] {
+  const matchingNames = new Set(
+    providerRefs.flatMap(ref => {
+      const registry = registryForProviderRef(ref, registries);
+      return registry ? [registry.name] : [];
+    }),
+  );
+  return registries.filter(registry => matchingNames.has(registry.name));
+}
+
+export type CollectionSourceType = 'external-registry' | 'unknown';
+export type CollectionSourceFilter = 'all' | CollectionSourceType;
+
+/** Classify only provider refs whose registry prefix is verified in registry data. */
+export function collectionSourceType(
+  providerRefs: string[],
+  registries: Registry[],
+): CollectionSourceType {
+  return providerRefs.length > 0 &&
+    providerRefs.every(ref => registryForProviderRef(ref, registries))
+    ? 'external-registry'
+    : 'unknown';
+}
+
+export function matchesCollectionSourceFilter(
+  providerRefs: string[],
+  registries: Registry[],
+  filter: CollectionSourceFilter,
+): boolean {
+  return (
+    filter === 'all' ||
+    collectionSourceType(providerRefs, registries) === filter
+  );
+}
+
+export function getLatestRegistryCheck(
+  registries: Registry[],
+): Registry | undefined {
+  return registries
+    .filter(registry => {
+      return (
+        typeof registry.lastReconciledAt === 'string' &&
+        Number.isFinite(Date.parse(registry.lastReconciledAt))
+      );
+    })
+    .sort(
+      (left, right) =>
+        Date.parse(right.lastReconciledAt!) -
+        Date.parse(left.lastReconciledAt!),
+    )[0];
 }

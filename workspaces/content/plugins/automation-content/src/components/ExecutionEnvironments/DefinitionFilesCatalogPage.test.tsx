@@ -1,6 +1,9 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { TestApiProvider, mockApis } from '@backstage/test-utils';
+import yaml from 'js-yaml';
 import {
   configApiRef,
   discoveryApiRef,
@@ -52,22 +55,54 @@ const definition: Entity = {
   spec: { type: 'execution-environment', owner: 'group:default/platform' },
 };
 
-function renderPage(getEntities = async () => ({ items: [definition] })) {
-  return render(
+const networkingSeed = yaml.load(
+  readFileSync(
+    resolve(__dirname, '../../../dev/fixtures/networking-ee.catalog.yaml'),
+    'utf8',
+  ),
+) as Entity;
+
+function renderPage(
+  getEntities: () => Promise<{ items: Entity[] }> = async () => ({
+    items: [definition],
+  }),
+) {
+  const queryEntities = jest.fn(
+    async (request: { query?: unknown; limit?: number; offset?: number }) => {
+      const response = await getEntities();
+      const hasDigestExclusion = Boolean(
+        request.query &&
+          typeof request.query === 'object' &&
+          '$not' in request.query &&
+          (
+            request.query as {
+              $not?: Record<string, { $exists?: boolean }>;
+            }
+          ).$not?.['metadata.annotations.ansible.com/digest']?.$exists === true,
+      );
+      const filteredItems = hasDigestExclusion
+        ? response.items.filter(
+            entity =>
+              entity.metadata.annotations?.['ansible.com/digest'] === undefined,
+          )
+        : response.items;
+      const offset = request.offset ?? 0;
+      const limit = request.limit ?? filteredItems.length;
+      return {
+        items: filteredItems.slice(offset, offset + limit),
+        totalItems: filteredItems.length,
+        pageInfo: {},
+      };
+    },
+  );
+  const view = render(
     <TestApiProvider
       apis={[
         [
           catalogApiRef,
           {
             getEntities,
-            queryEntities: async () => {
-              const response = await getEntities();
-              return {
-                ...response,
-                totalItems: response.items.length,
-                pageInfo: {},
-              };
-            },
+            queryEntities,
             getEntityFacets: async () => ({ facets: {} }),
             getEntitiesByRefs: async () => ({
               items: [
@@ -95,6 +130,7 @@ function renderPage(getEntities = async () => ({ items: [definition] })) {
       </MemoryRouter>
     </TestApiProvider>,
   );
+  return { ...view, queryEntities };
 }
 
 it('renders entity-backed definition columns and metadata', async () => {
@@ -113,8 +149,90 @@ it('renders entity-backed definition columns and metadata', async () => {
   expect(screen.getByRole('columnheader', { name: 'Actions' })).toBeTruthy();
   expect(
     screen.getByRole('link', { name: 'web-ee' }).getAttribute('href'),
-  ).toBe('/catalog/default/component/web-ee');
+  ).toBe('/content/ee/catalog/default/web-ee');
   expect(await screen.findByText('platform')).toBeTruthy();
+});
+
+it('encodes non-default definition entity refs in the local details route', async () => {
+  const namespacedDefinition: Entity = {
+    ...definition,
+    metadata: {
+      ...definition.metadata,
+      name: 'web-ee+staging',
+      namespace: 'team+one',
+    },
+  };
+  renderPage(async () => ({ items: [namespacedDefinition] }));
+
+  expect(
+    await screen.findByRole('link', { name: 'web-ee+staging' }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole('link', { name: 'web-ee+staging' }).getAttribute('href'),
+  ).toBe('/content/ee/catalog/team%2Bone/web-ee%2Bstaging');
+});
+
+it('excludes registry-backed images with the catalog provider digest annotation', async () => {
+  const registryImage: Entity = {
+    ...definition,
+    metadata: {
+      ...definition.metadata,
+      name: 'registry-demo-utopia-ee',
+      title: 'demo/utopia-ee:latest',
+      description: 'Execution environment with 2 collections',
+      tags: ['execution-environment'],
+      annotations: {
+        'ansible.com/registry': 'demo-registry',
+        'ansible.com/repository': 'demo/utopia-ee',
+        'ansible.com/digest': 'sha256:0123456789abcdef',
+        'ansible.com/pull-reference':
+          'registry.example/demo/utopia-ee@sha256:0123456789abcdef',
+      },
+    },
+    spec: {
+      type: 'execution-environment',
+      lifecycle: 'production',
+      owner: 'group:default/platform',
+      dependsOn: [],
+    },
+  };
+  const emptyDigestImage: Entity = {
+    ...registryImage,
+    metadata: {
+      ...registryImage.metadata,
+      name: 'registry-empty-digest',
+      annotations: {
+        ...registryImage.metadata.annotations,
+        'ansible.com/digest': '',
+      },
+    },
+  };
+  const { queryEntities } = renderPage(async () => ({
+    items: [definition, networkingSeed, registryImage, emptyDigestImage],
+  }));
+
+  expect(
+    await screen.findByRole('heading', {
+      name: 'Execution Environments definition files (2)',
+    }),
+  ).toBeTruthy();
+  expect(screen.getByRole('link', { name: 'web-ee' })).toBeTruthy();
+  expect(screen.getByRole('link', { name: 'networking-ee' })).toBeTruthy();
+  expect(
+    screen.queryByRole('link', { name: 'registry-demo-utopia-ee' }),
+  ).toBeNull();
+  expect(
+    screen.queryByRole('link', { name: 'registry-empty-digest' }),
+  ).toBeNull();
+  expect(queryEntities).toHaveBeenCalledWith(
+    expect.objectContaining({
+      query: {
+        $not: {
+          'metadata.annotations.ansible.com/digest': { $exists: true },
+        },
+      },
+    }),
+  );
 });
 
 it('gates row actions by annotations and buildability', async () => {

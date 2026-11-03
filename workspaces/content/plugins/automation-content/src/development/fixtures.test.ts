@@ -11,6 +11,10 @@ it('provides valid unique reserved refs, all four statuses and honest inventorie
   try {
     const rows = createDemoImages(now);
     expect(new Set(rows.map(row => row.ref)).size).toBe(7);
+    expect(rows[4].definitionEntityRef).toBe('component:default/networking-ee');
+    expect(
+      rows.filter(row => row.definitionEntityRef !== undefined),
+    ).toHaveLength(1);
     expect(
       new Set(
         rows.map(row =>

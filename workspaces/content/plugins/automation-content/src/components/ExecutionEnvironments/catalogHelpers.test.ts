@@ -1,4 +1,6 @@
 import {
+  definitionFileHref,
+  definitionFileName,
   environmentHref,
   imageContentsSummary,
   matchesEnvironment,
@@ -24,6 +26,33 @@ it('round trips slashes and digest in immutable navigation', () => {
   const href = environmentHref('/images', image.ref);
   expect(decodeURIComponent(href.slice('/images/'.length))).toBe(image.ref);
   expect(href).toContain('%2F');
+});
+
+it('builds a definition details route from a stable component ref', () => {
+  expect(
+    definitionFileHref('/content/ee/', 'component:default/networking-ee'),
+  ).toBe('/content/ee/catalog/default/networking-ee');
+  expect(
+    definitionFileHref('/content/ee', 'component:team+one/networking+ee'),
+  ).toBe('/content/ee/catalog/team%2Bone/networking%2Bee');
+  expect(definitionFileName('component:default/networking-ee')).toBe(
+    'networking-ee',
+  );
+});
+
+it('omits definition routes for missing, malformed, or non-component refs', () => {
+  expect(definitionFileHref('/content/ee', '')).toBeUndefined();
+  expect(definitionFileHref('/content/ee', 'networking-ee')).toBeUndefined();
+  expect(
+    definitionFileHref('/content/ee', 'component:default/'),
+  ).toBeUndefined();
+  expect(definitionFileHref('/content/ee', 'group:default/networking')).toBe(
+    undefined,
+  );
+  expect(
+    definitionFileHref('', 'component:default/networking-ee'),
+  ).toBeUndefined();
+  expect(definitionFileName('invalid')).toBeUndefined();
 });
 
 it('does not render unknown inventories as zero or partial counts as complete', () => {

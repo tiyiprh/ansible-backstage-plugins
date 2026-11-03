@@ -664,6 +664,7 @@ it('shows all demo sync states beside a live row and safely opens demo details',
     ref: 'quay.io/live/automation-ee@sha256:ffffffffffffffffffffffffffffffff',
     registry: 'quay.io',
     repository: 'live/automation-ee',
+    definitionEntityRef: 'component:default/networking-ee',
     digest: 'sha256:ffffffffffffffffffffffffffffffff',
     pullReference:
       'quay.io/live/automation-ee@sha256:ffffffffffffffffffffffffffffffff',
@@ -703,7 +704,7 @@ it('shows all demo sync states beside a live row and safely opens demo details',
   expect(screen.getByText('3 days ago')).toBeTruthy();
   expect(screen.getByText('2 hours ago')).toBeTruthy();
   expect(screen.getByText('Never reconciled')).toBeTruthy();
-  expect(screen.getByText('Definition file')).toBeTruthy();
+  expect(screen.getAllByText('Definition file')).toHaveLength(2);
   expect(screen.queryByText('Proposed demo source')).toBeNull();
   expect(screen.queryByText('Demo')).toBeNull();
   expect(

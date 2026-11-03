@@ -28,6 +28,8 @@ export interface ContentCounts {
 
 export interface ExecutionEnvironment {
   ref: string;
+  /** Stable Backstage catalog entity ref; production producer association is a backend follow-up. */
+  definitionEntityRef?: string;
   /** Result of classification — only `execution-environment` has enumerable contents. */
   type?: string;
   classification?: { type: string; confidence: string; signals: string[] };
