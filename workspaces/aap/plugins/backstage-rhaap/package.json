@@ -3,6 +3,11 @@
   "version": "2.3.1",
   "main": "src/index.ts",
   "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./alpha": "./src/alpha.tsx",
+    "./package.json": "./package.json"
+  },
   "license": "Apache-2.0",
   "publishConfig": {
     "access": "public",
@@ -11,13 +16,13 @@
   },
   "backstage": {
     "role": "frontend-plugin",
+    "features": {
+      "./alpha": "@backstage/FrontendPlugin"
+    },
     "pluginId": "ansible",
     "pluginPackages": [
       "@ansible/plugin-backstage-rhaap"
-    ],
-    "features": {
-      "./alpha": "@backstage/FrontendPlugin"
-    }
+    ]
   },
   "sideEffects": false,
   "scripts": {
@@ -76,10 +81,5 @@
     "config.d.ts",
     "dist-scalprum"
   ],
-  "configSchema": "config.d.ts",
-  "exports": {
-    ".": "./src/index.ts",
-    "./alpha": "./src/alpha.tsx",
-    "./package.json": "./package.json"
-  }
+  "configSchema": "config.d.ts"
 }
