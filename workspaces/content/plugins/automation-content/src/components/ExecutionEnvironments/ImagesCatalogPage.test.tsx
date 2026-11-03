@@ -57,11 +57,13 @@ const envelope = (
   items: ExecutionEnvironment[],
   page = 1,
   totalItems = items.length,
+  pageSize = 10,
 ) => ({
   items,
   page,
   totalItems,
-  next: page * 10 < totalItems ? `?page=${page + 1}` : null,
+  pageSize,
+  next: page * pageSize < totalItems ? `?page=${page + 1}` : null,
 });
 
 it('does not describe a failed inventory request as empty', async () => {
@@ -111,11 +113,13 @@ it('defaults to classified EEs and refetches everything when toggled', async () 
   expect(listExecutionEnvironments).toHaveBeenLastCalledWith({
     allTypes: false,
     page: 1,
+    perPage: 10,
   });
   await userEvent.click(screen.getByRole('checkbox', { name: /all images/ }));
   expect(listExecutionEnvironments).toHaveBeenLastCalledWith({
     allTypes: true,
     page: 1,
+    perPage: 10,
   });
 });
 
@@ -186,8 +190,8 @@ it('uses server totals, fetches page 2 and resets pagination when all types chan
     }),
   );
   expect(
-    screen.queryByRole('combobox', { name: 'Select table page size' }),
-  ).toBeNull();
+    screen.getByRole('button', { name: /Select table page size/ }),
+  ).toBeTruthy();
   await userEvent.click(
     screen.getByRole('button', { name: 'Next table page' }),
   );
@@ -195,6 +199,7 @@ it('uses server totals, fetches page 2 and resets pagination when all types chan
   expect(listExecutionEnvironments).toHaveBeenLastCalledWith({
     allTypes: false,
     page: 2,
+    perPage: 10,
   });
   expect(await screen.findByRole('link', { name: 'repo-2-0' })).toBeTruthy();
   await waitFor(() =>
@@ -213,6 +218,7 @@ it('uses server totals, fetches page 2 and resets pagination when all types chan
     expect(listExecutionEnvironments).toHaveBeenLastCalledWith({
       allTypes: true,
       page: 1,
+      perPage: 10,
     }),
   );
   expect(await screen.findByText('1 - 10 of 26')).toBeTruthy();
@@ -241,6 +247,48 @@ it('keeps favorites filtering on the current page', async () => {
   expect(await screen.findByText('No images match your filters')).toBeTruthy();
   await userEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
   expect(await screen.findByRole('link', { name: 'repo' })).toBeTruthy();
+});
+
+it('offers supported page sizes and resets to page one when the size changes', async () => {
+  const listExecutionEnvironments = jest.fn(
+    async ({ page, perPage }: { page: number; perPage: number }) =>
+      envelope([base], page, 60, perPage),
+  );
+  render(
+    <TestApiProvider
+      apis={[
+        [automationContentApiRef, { listExecutionEnvironments }],
+        [catalogApiRef, { getEntities: async () => ({ items: [] }) }],
+      ]}
+    >
+      <MemoryRouter>
+        <ImagesCatalogPage />
+      </MemoryRouter>
+    </TestApiProvider>,
+  );
+  await screen.findByText('1 - 10 of 60');
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Next table page' }),
+  );
+  await screen.findByText('11 - 20 of 60');
+  const pageSizeSelect = document.querySelector<HTMLSelectElement>(
+    'select[name="pageSize"]',
+  )!;
+  expect(
+    Array.from(pageSizeSelect.options)
+      .map(option => option.value)
+      .filter(Boolean),
+  ).toEqual(['10', '20', '50']);
+  fireEvent.change(pageSizeSelect, { target: { value: '20' } });
+  await waitFor(() =>
+    expect(listExecutionEnvironments).toHaveBeenLastCalledWith({
+      allTypes: false,
+      page: 1,
+      perPage: 20,
+    }),
+  );
+  expect(await screen.findByText('1 - 20 of 60')).toBeTruthy();
+  expect(screen.getByText('1 images loaded')).toBeTruthy();
 });
 
 it('skips the catalog request for an empty page', async () => {

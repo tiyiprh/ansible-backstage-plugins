@@ -83,3 +83,22 @@ it('lists the full inventory when all types are requested', async () => {
   await client.listExecutionEnvironments({ allTypes: true });
   expect(fetch).toHaveBeenCalledWith('/backend/content');
 });
+
+it.each([
+  [false, 20, '/backend/content?type=execution-environment&page=2&per_page=20'],
+  [true, 50, '/backend/content?page=2&per_page=50'],
+  [false, 0, '/backend/content?type=execution-environment&page=2&per_page=0'],
+])(
+  'preserves allTypes=%s and page when serializing perPage=%s',
+  async (allTypes, perPage, url) => {
+    const fetch = jest
+      .fn()
+      .mockResolvedValue({ ok: true, json: async () => ({ items: [] }) });
+    const client = new AutomationContentClient({
+      discoveryApi: { getBaseUrl: async () => '/backend' },
+      fetchApi: { fetch },
+    });
+    await client.listExecutionEnvironments({ allTypes, page: 2, perPage });
+    expect(fetch).toHaveBeenCalledWith(url);
+  },
+);

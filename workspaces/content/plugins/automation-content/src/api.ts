@@ -155,6 +155,7 @@ export interface AutomationContentApi {
   listExecutionEnvironments(opts?: {
     allTypes?: boolean;
     page?: number;
+    perPage?: number;
   }): Promise<ExecutionEnvironmentPage>;
   getExecutionEnvironment(ref: string): Promise<ExecutionEnvironment>;
   getContents(
@@ -267,7 +268,7 @@ export class AutomationContentClient implements AutomationContentApi {
   }
 
   async listExecutionEnvironments(
-    opts: { allTypes?: boolean; page?: number } = {},
+    opts: { allTypes?: boolean; page?: number; perPage?: number } = {},
   ): Promise<ExecutionEnvironmentPage> {
     // By default only artifacts classified as execution environments are
     // listed. `allTypes` opts in to the full registry inventory: the
@@ -277,6 +278,8 @@ export class AutomationContentClient implements AutomationContentApi {
     const search = new URLSearchParams();
     if (!opts.allTypes) search.set('type', 'execution-environment');
     if (opts.page !== undefined) search.set('page', String(opts.page));
+    if (opts.perPage !== undefined)
+      search.set('per_page', String(opts.perPage));
     const suffix = search.toString() ? `?${search}` : '';
     return this.get(`/content${suffix}`);
   }

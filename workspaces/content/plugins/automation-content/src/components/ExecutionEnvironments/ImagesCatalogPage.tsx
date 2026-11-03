@@ -65,9 +65,10 @@ export function ImagesCatalogPage({
   const [status, setStatus] = useState('all');
   const [contentState, setContentState] = useState('all');
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(10);
   const images = useAsyncRetry(
-    () => api.listExecutionEnvironments({ allTypes, page }),
-    [api, allTypes, page],
+    () => api.listExecutionEnvironments({ allTypes, page, perPage }),
+    [api, allTypes, page, perPage],
   );
   /**
    * Where the artifact came from. Registry scans are the only source today;
@@ -351,9 +352,7 @@ export function ImagesCatalogPage({
       >
         <Text as="h2" variant="title-medium">
           Execution Environments images
-          {images.value
-            ? ` (${images.value.totalItems ?? images.value.items.length})`
-            : ''}
+          {images.value ? ` (${images.value.totalItems})` : ''}
         </Text>
         {images.error && (
           <div role="alert">
@@ -373,20 +372,18 @@ export function ImagesCatalogPage({
               {...table.tableProps}
               pagination={{
                 type: 'page',
-                // Page size is server-fixed at 10 until PR #1023 gains a pageSize param.
-                pageSize: 10,
-                pageSizeOptions: [],
-                offset: ((images.value?.page ?? page) - 1) * 10,
-                // Older backends (pre-#1023) return no envelope; fall back to the page's
-                // own length so the total is honest, if partial, against them.
-                totalCount:
-                  images.value?.totalItems ?? images.value?.items.length ?? 0,
+                pageSize: perPage,
+                pageSizeOptions: [10, 20, 50],
+                showPageSizeOptions: true,
+                onPageSizeChange: size => {
+                  setPerPage(size);
+                  setPage(1);
+                },
+                offset: ((images.value?.page ?? page) - 1) * perPage,
+                totalCount: images.value?.totalItems ?? 0,
                 hasNextPage:
                   !images.loading &&
-                  page * 10 <
-                    (images.value?.totalItems ??
-                      images.value?.items.length ??
-                      0),
+                  page * perPage < (images.value?.totalItems ?? 0),
                 hasPreviousPage: !images.loading && page > 1,
                 onNextPage: () => setPage(current => current + 1),
                 onPreviousPage: () => setPage(current => current - 1),
