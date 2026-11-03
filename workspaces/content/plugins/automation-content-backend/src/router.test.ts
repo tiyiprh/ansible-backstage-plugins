@@ -131,7 +131,6 @@ function seed(items: Array<Record<string, unknown>>): ContentIndex {
   return index;
 }
 
-<<<<<<< HEAD
 function seedArtifacts(count: number): ContentIndex {
   const index = new ContentIndex([], {
     info: () => {},
@@ -246,7 +245,6 @@ describe('sync authorization', () => {
   it('allows superusers to sync', async () => {
     const app = await appWith(seed([]));
     await request(app).post('/sync').expect(200);
->>>>>>> 8a3e45a9 (fix(content): enforce superuser authorization on sync endpoints)
   });
 });
 
