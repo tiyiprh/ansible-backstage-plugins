@@ -1,0 +1,43 @@
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: local-ee-wizard-demo
+  title: Build an execution environment
+  description: Build a local execution environment from a base image and selected Ansible content.
+  tags:
+    - execution-environment
+    - local-demo
+spec:
+  owner: user:development/guest
+  type: execution-environment
+  parameters:
+    - title: Execution environment details
+      required:
+        - name
+        - baseImage
+      properties:
+        name:
+          title: Name
+          type: string
+          description: Name for the execution environment.
+          ui:autofocus: true
+        baseImage:
+          title: Base image
+          type: string
+          default: quay.io/ansible/ansible-runner:latest
+    - title: Ansible content
+      properties:
+        collections:
+          title: Collections
+          type: string
+          description: Collections to include, separated by commas.
+        pythonPackages:
+          title: Python packages
+          type: string
+          description: Python packages to include, separated by commas.
+  steps:
+    - id: preview
+      name: Preview build configuration
+      action: debug:log
+      input:
+        message: 'Local EE wizard preview for ${{ parameters.name }}'

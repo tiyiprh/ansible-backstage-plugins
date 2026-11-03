@@ -1,0 +1,2 @@
+p, role:default/content-viewer, ansible.content.view, use, allow
+g, user:development/guest, role:default/content-viewer

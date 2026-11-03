@@ -1,4 +1,11 @@
-import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
+import {
+  useMemo,
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  type ReactNode,
+} from 'react';
 import { IChangeEvent } from '@rjsf/core';
 import { getDefaultFormState } from '@rjsf/utils';
 import validator from '@rjsf/validator-ajv8';
@@ -233,6 +240,11 @@ interface StepFormProps {
   initialFormData?: Record<string, any>;
   storageKey?: string;
   nativeFields?: FieldExtensionOptions<any, any>[];
+  leadingStepTitle?: string;
+  leadingStepContent?: ReactNode;
+  leadingStepNextDisabled?: boolean;
+  placeholderStepTitles?: string[];
+  onBackToLeadingStep?: () => void;
 }
 
 interface CreateButtonProps {
@@ -670,6 +682,11 @@ export const StepForm = ({
   initialFormData,
   storageKey,
   nativeFields,
+  leadingStepTitle,
+  leadingStepContent,
+  leadingStepNextDisabled = false,
+  placeholderStepTitles = [],
+  onBackToLeadingStep,
 }: StepFormProps) => {
   // Filter out steps that only contain a "token" field
   const filteredSteps = useMemo(() => {
@@ -731,10 +748,23 @@ export const StepForm = ({
         // silently ignore parsing errors
       }
     }
+    if (leadingStepContent) return -1;
     return filteredSteps.length === 0 ? filteredSteps.length : 0;
-  }, [activeStepStorageKey, filteredSteps.length, isOAuthRestore]);
+  }, [
+    activeStepStorageKey,
+    filteredSteps.length,
+    isOAuthRestore,
+    leadingStepContent,
+  ]);
 
   const [activeStep, setActiveStep] = useState(getInitialActiveStep);
+  useEffect(() => {
+    if (!leadingStepContent && activeStep === -1) {
+      setActiveStep(0);
+    }
+  }, [activeStep, leadingStepContent]);
+  const hasLeadingStep = Boolean(leadingStepTitle || leadingStepContent);
+  const stepperActiveStep = hasLeadingStep ? activeStep + 1 : activeStep;
   const [formData, setFormData] = useState<Record<string, any>>(() => {
     const schemaDefaults = computeMergedDefaultsFromSteps(filteredSteps);
     if (isOAuthRestore && formDataStorageKey) {
@@ -1077,6 +1107,7 @@ export const StepForm = ({
     if (
       filteredSteps.length === 0 &&
       !hasDisplayableFields &&
+      !leadingStepContent &&
       !isAutoExecuting
     ) {
       setIsAutoExecuting(true);
@@ -1091,6 +1122,7 @@ export const StepForm = ({
     hasDisplayableFields,
     isAutoExecuting,
     handleFinalSubmit,
+    leadingStepContent,
   ]);
 
   const getLabel = (key: string, stepIndex: number) => {
@@ -1296,7 +1328,35 @@ export const StepForm = ({
   return (
     <div>
       <SecretsContextProvider>
-        <Stepper activeStep={activeStep} orientation="vertical">
+        <Stepper activeStep={stepperActiveStep} orientation="vertical">
+          {hasLeadingStep && (
+            <Step completed={activeStep >= 0}>
+              <StepLabel>{leadingStepTitle}</StepLabel>
+              <StepContent>
+                {activeStep === -1 && leadingStepContent && (
+                  <>
+                    {leadingStepContent}
+                    <div style={{ marginTop: '25px' }}>
+                      <Button
+                        onClick={handleNext}
+                        disabled={leadingStepNextDisabled}
+                        variant="contained"
+                        color="primary"
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </StepContent>
+            </Step>
+          )}
+          {activeStep === -1 &&
+            placeholderStepTitles.map(title => (
+              <Step key={title}>
+                <StepLabel>{title}</StepLabel>
+              </Step>
+            ))}
           {filteredSteps.map((step, index) => {
             const stepKey = `${step.title}-${index}`;
             return (
@@ -1332,9 +1392,17 @@ export const StepForm = ({
                           <EntityPickerFieldExtension />
                         </ScaffolderFieldExtensions>
                         <div style={{ marginTop: '25px' }}>
-                          {index > 0 && (
+                          {(index > 0 ||
+                            (leadingStepTitle && onBackToLeadingStep)) && (
                             <Button
-                              onClick={handleBack}
+                              onClick={() => {
+                                if (index === 0 && onBackToLeadingStep) {
+                                  setActiveStep(-1);
+                                  onBackToLeadingStep();
+                                } else {
+                                  handleBack();
+                                }
+                              }}
                               disabled={isValidatingFields}
                               style={{ marginRight: '10px' }}
                               variant="outlined"

@@ -1,6 +1,7 @@
 export * from './plugin';
 
 export { LandingPage } from './components/LandingPage';
+export { CreateTask } from './components/CreateTask';
 export { TaskList } from './components/TaskList';
 export {
   EEBuilderSidebarItem,

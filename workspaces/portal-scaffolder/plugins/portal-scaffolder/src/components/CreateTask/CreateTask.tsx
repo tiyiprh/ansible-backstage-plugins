@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, type ReactElement } from 'react';
 import {
   Header,
   Page,
@@ -11,7 +11,10 @@ import {
   scaffolderApiRef,
   type FieldExtensionOptions,
 } from '@backstage/plugin-scaffolder-react';
-import type { TemplateParameterSchema } from '@backstage/plugin-scaffolder-common';
+import type {
+  TemplateEntityV1beta3,
+  TemplateParameterSchema,
+} from '@backstage/plugin-scaffolder-common';
 import { catalogApiRef } from '@backstage/plugin-catalog-react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
@@ -23,6 +26,10 @@ import {
   Grid,
   IconButton,
   makeStyles,
+  Step,
+  StepContent,
+  StepLabel,
+  Stepper,
 } from '@material-ui/core';
 import ArrowBack from '@material-ui/icons/ArrowBack';
 import { rootRouteRef } from '../../routes';
@@ -62,7 +69,17 @@ const headerStyles = makeStyles(theme => ({
 
 export const CreateTask = ({
   nativeFields,
-}: { nativeFields?: FieldExtensionOptions<any, any>[] } = {}) => {
+  fromEE = false,
+  embedded = false,
+  templatePicker,
+}: {
+  nativeFields?: FieldExtensionOptions<any, any>[];
+  fromEE?: boolean;
+  embedded?: boolean;
+  templatePicker?: (
+    onSelect: (template: TemplateEntityV1beta3) => void,
+  ) => ReactElement;
+} = {}) => {
   const classes = headerStyles();
   const { namespace, templateName } = useParams<{
     namespace: string;
@@ -72,6 +89,16 @@ export const CreateTask = ({
   const catalogApi = useApi(catalogApiRef);
   const rootLink = useRouteRef(rootRouteRef);
   const location = useLocation();
+  const isEEFlow =
+    fromEE || new URLSearchParams(location.search).get('from') === 'ee';
+  const [selectedTemplate, setSelectedTemplate] = useState<{
+    namespace: string;
+    templateName: string;
+  } | null>(() =>
+    namespace && templateName ? { namespace, templateName } : null,
+  );
+  const resolvedNamespace = selectedTemplate?.namespace ?? namespace;
+  const resolvedTemplateName = selectedTemplate?.templateName ?? templateName;
 
   const [entityTemplate, setEntityTemplate] =
     useState<TemplateParameterSchema | null>(null);
@@ -93,13 +120,13 @@ export const CreateTask = ({
     formData: Record<string, any>,
     secrets?: Record<string, string>,
   ) => {
-    if (!namespace || !templateName) {
+    if (!resolvedNamespace || !resolvedTemplateName) {
       throw new Error('Missing namespace or name in URL parameters');
     }
 
     try {
       const task = await scaffolderApi.scaffold({
-        templateRef: `template:${namespace}/${templateName}`,
+        templateRef: `template:${resolvedNamespace}/${resolvedTemplateName}`,
         values: formData,
         secrets,
       });
@@ -119,16 +146,18 @@ export const CreateTask = ({
     const fetchEntity = async () => {
       setLoading(true);
       try {
-        if (!templateName || !namespace) {
-          throw new Error('Missing name or namespace in URL parameters');
+        if (!resolvedTemplateName || !resolvedNamespace) {
+          setLoading(false);
+          return;
         }
-        const templateRef = `template:${namespace}/${templateName}`;
-        const response =
-          await scaffolderApi.getTemplateParameterSchema(templateRef);
+        const templateRef = `template:${resolvedNamespace}/${resolvedTemplateName}`;
+        const response = await scaffolderApi.getTemplateParameterSchema(
+          templateRef,
+        );
         setEntityTemplate(response as TemplateParameterSchema);
 
         try {
-          const entityRef = `template:${namespace}/${templateName}`;
+          const entityRef = `template:${resolvedNamespace}/${resolvedTemplateName}`;
           const entity = await catalogApi.getEntityByRef(entityRef);
           if (entity) {
             setTemplateEntity(entity);
@@ -147,9 +176,28 @@ export const CreateTask = ({
     };
 
     void fetchEntity();
-  }, [templateName, namespace, scaffolderApi, catalogApi]);
+  }, [resolvedTemplateName, resolvedNamespace, scaffolderApi, catalogApi]);
 
-  if (loading) {
+  const handleTemplateSelect = (template: TemplateEntityV1beta3) => {
+    setEntityTemplate(null);
+    setTemplateEntity(null);
+    setError(null);
+    setLoading(true);
+    setSelectedTemplate({
+      namespace: template.metadata.namespace ?? 'default',
+      templateName: template.metadata.name,
+    });
+  };
+
+  const handleBackToTemplateSelection = () => {
+    setSelectedTemplate(null);
+    setEntityTemplate(null);
+    setTemplateEntity(null);
+    setError(null);
+    setLoading(false);
+  };
+
+  if (loading && !(isEEFlow && templatePicker && !resolvedTemplateName)) {
     return (
       <Page themeId="tool">
         <Header title="Loading..." />
@@ -171,7 +219,10 @@ export const CreateTask = ({
     );
   }
 
-  if (!entityTemplate) {
+  if (
+    !entityTemplate &&
+    !(isEEFlow && templatePicker && !resolvedTemplateName)
+  ) {
     return (
       <Page themeId="tool">
         <Header title="No Data" />
@@ -182,7 +233,7 @@ export const CreateTask = ({
     );
   }
 
-  const [description, templateInfo] = entityTemplate.description
+  const [description, templateInfo] = entityTemplate?.description
     ? entityTemplate.description.split('(Template Info)')
     : [];
 
@@ -190,96 +241,133 @@ export const CreateTask = ({
     const isExecutionEnvironment =
       templateEntity?.spec?.type?.includes('execution-environment') ?? false;
 
-    if (isExecutionEnvironment) {
+    if (isEEFlow) {
+      navigate('/content/ee/create');
+    } else if (isExecutionEnvironment) {
       navigate(`${rootLink()}/ee/create`);
     } else {
       navigate(`${rootLink()}`);
     }
   };
 
+  const taskContent = (
+    <Content>
+      <Grid container direction="row-reverse">
+        {templateInfo && (
+          <Grid item xs={12} sm={12} md={5} lg={5}>
+            <Card>
+              <CardHeader title="About Template" />
+              <CardContent>
+                <MarkdownContent content={templateInfo} />
+              </CardContent>
+            </Card>
+          </Grid>
+        )}
+        <Grid
+          item
+          xs={12}
+          sm={12}
+          md={templateInfo ? 7 : 12}
+          lg={templateInfo ? 7 : 12}
+        >
+          <StepForm
+            steps={entityTemplate?.steps ?? []}
+            submitFunction={finalSubmit}
+            initialFormData={initialFormData}
+            storageKey={`${resolvedNamespace}/${resolvedTemplateName}`}
+            nativeFields={nativeFields}
+            leadingStepTitle={isEEFlow ? 'Choose template' : undefined}
+            leadingStepContent={
+              isEEFlow && templatePicker && !resolvedTemplateName
+                ? templatePicker(handleTemplateSelect)
+                : undefined
+            }
+            leadingStepNextDisabled={!selectedTemplate || loading}
+            onBackToLeadingStep={
+              isEEFlow && templatePicker
+                ? handleBackToTemplateSelection
+                : undefined
+            }
+            placeholderStepTitles={
+              isEEFlow && !resolvedTemplateName
+                ? ['Execution environment details', 'Ansible content']
+                : undefined
+            }
+          />
+          <Box
+            display="flex"
+            justifyContent="flex-end"
+            marginTop="16px"
+            marginBottom={4}
+          >
+            <Button
+              onClick={() => {
+                const isExecutionEnvironment =
+                  templateEntity?.spec?.type?.includes(
+                    'execution-environment',
+                  ) ?? false;
+
+                if (isEEFlow) {
+                  navigate('/content/ee/images');
+                } else if (isExecutionEnvironment) {
+                  navigate(`${rootLink()}/ee/create`);
+                } else {
+                  navigate(`${rootLink()}`);
+                }
+              }}
+              variant="text"
+              color="primary"
+            >
+              Cancel
+            </Button>
+          </Box>
+        </Grid>
+      </Grid>
+    </Content>
+  );
+
+  if (embedded) return taskContent;
+
   return (
     <Page themeId="website">
       <Header
-        pageTitleOverride="Create Task"
+        pageTitleOverride={
+          isEEFlow ? 'Create execution environment' : 'Create Task'
+        }
         title={
-          <Box className={classes.headerTitleContainer}>
-            <Box className={classes.backButtonContainer}>
-              <IconButton
-                onClick={handleBack}
-                className={classes.backButton}
-                aria-label="go back"
-                data-testid="back-button"
+          isEEFlow ? (
+            'Create execution environment'
+          ) : (
+            <Box className={classes.headerTitleContainer}>
+              <Box className={classes.backButtonContainer}>
+                <IconButton
+                  onClick={handleBack}
+                  className={classes.backButton}
+                  aria-label="go back"
+                  data-testid="back-button"
+                >
+                  <ArrowBack />
+                </IconButton>
+              </Box>
+              <span
+                className={classes.header_title_color}
+                data-testid="template-task--title"
               >
-                <ArrowBack />
-              </IconButton>
+                {entityTemplate?.title ?? 'Create task'}
+              </span>
             </Box>
-            <span
-              className={classes.header_title_color}
-              data-testid="template-task--title"
-            >
-              {entityTemplate.title}
-            </span>
-          </Box>
+          )
         }
         subtitle={
-          <span className={classes.header_subtitle}>{description}</span>
+          <span className={classes.header_subtitle}>
+            {isEEFlow
+              ? 'Create an execution environment using a template.'
+              : description}
+          </span>
         }
         style={{ background: 'inherit', paddingTop: 0 }}
       />
-      <Content>
-        <Grid container direction="row-reverse">
-          {templateInfo && (
-            <Grid item xs={12} sm={12} md={5} lg={5}>
-              <Card>
-                <CardHeader title="About Template" />
-                <CardContent>
-                  <MarkdownContent content={templateInfo} />
-                </CardContent>
-              </Card>
-            </Grid>
-          )}
-          <Grid
-            item
-            xs={12}
-            sm={12}
-            md={templateInfo ? 7 : 12}
-            lg={templateInfo ? 7 : 12}
-          >
-            <StepForm
-              steps={entityTemplate.steps}
-              submitFunction={finalSubmit}
-              initialFormData={initialFormData}
-              storageKey={`${namespace}/${templateName}`}
-              nativeFields={nativeFields}
-            />
-            <Box
-              display="flex"
-              justifyContent="flex-end"
-              marginTop="16px"
-              marginBottom={4}
-            >
-              <Button
-                onClick={() => {
-                  const isExecutionEnvironment =
-                    templateEntity?.spec?.type?.includes(
-                      'execution-environment',
-                    ) ?? false;
-
-                  if (isExecutionEnvironment) {
-                    navigate(`${rootLink()}/ee/create`);
-                  } else {
-                    navigate(`${rootLink()}`);
-                  }
-                }}
-                variant="text"
-                color="primary"
-              >
-                Cancel
-              </Button>
-            </Box>
-          </Grid>
-        </Grid>
-      </Content>
+      {taskContent}
     </Page>
   );
 };

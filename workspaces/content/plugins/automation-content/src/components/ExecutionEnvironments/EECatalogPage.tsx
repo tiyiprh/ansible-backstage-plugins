@@ -18,7 +18,7 @@ import { ImagesCatalogPage } from './ImagesCatalogPage';
 import { PageHeaderSection } from '../common';
 import styles from './EECatalogPage.module.css';
 
-export type EECatalogView = 'images' | 'catalog' | 'create';
+export type EECatalogView = 'images' | 'catalog';
 
 /** Shared EE catalog shell keeps each prototype tab addressable by its route. */
 function EETabs({ view }: { view: EECatalogView }): ReactElement {
@@ -60,10 +60,18 @@ function EETabs({ view }: { view: EECatalogView }): ReactElement {
             actions={
               <>
                 {view === 'images' && (
-                  <RegistrySyncButton
-                    onStatus={setSyncStatus}
-                    onSynced={() => setSyncVersion(version => version + 1)}
-                  />
+                  <Flex align="center" gap="2">
+                    <Button
+                      variant="primary"
+                      onPress={() => navigate(`${eeBase}/create`)}
+                    >
+                      Create execution environment
+                    </Button>
+                    <RegistrySyncButton
+                      onStatus={setSyncStatus}
+                      onSynced={() => setSyncVersion(version => version + 1)}
+                    />
+                  </Flex>
                 )}
                 {view !== 'images' && isSuperuser && (
                   <Flex align="center" gap="2">
@@ -87,7 +95,6 @@ function EETabs({ view }: { view: EECatalogView }): ReactElement {
             <TabList aria-label="Execution environment catalogs">
               <Tab id="images">Execution environments</Tab>
               <Tab id="catalog">Definition files</Tab>
-              <Tab id="create">Create</Tab>
             </TabList>
             <TabPanel id="images">
               {view === 'images' && (

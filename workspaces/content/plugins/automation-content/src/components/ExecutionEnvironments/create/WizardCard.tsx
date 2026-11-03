@@ -21,7 +21,11 @@ import { StarIcon } from '../../common';
 /** Prototype WizardCard, including separate details and permission-gated Start actions. */
 export function WizardCard({
   template,
-}: Readonly<{ template: TemplateEntityV1beta3 }>): ReactElement {
+  onStart,
+}: Readonly<{
+  template: TemplateEntityV1beta3;
+  onStart?: () => void;
+}>): ReactElement {
   const namespace = template?.metadata?.namespace ?? 'default';
   const name = template?.metadata?.name ?? '';
   const { allowed: canCreateTask } = usePermission({
@@ -78,7 +82,10 @@ export function WizardCard({
               size="small"
               variant="secondary"
               data-testid="template-card-actions--create"
-              href={`/create/templates/${namespace}/${name}`}
+              href={
+                onStart ? undefined : `/create/templates/${namespace}/${name}`
+              }
+              onPress={onStart}
             >
               Start
             </ButtonLink>

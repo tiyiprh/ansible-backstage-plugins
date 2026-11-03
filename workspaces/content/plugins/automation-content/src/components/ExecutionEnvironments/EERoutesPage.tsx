@@ -5,6 +5,19 @@ import { DefinitionFileDetailsPage } from './DefinitionFileDetailsPage';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import type { ReactElement } from 'react';
 import { Flex } from '@backstage/ui';
+import { CreateTask } from '@ansible/portal-scaffolder';
+import { CreateContent } from './CreateContent';
+
+function EECreateTemplateRoute(): ReactElement {
+  return (
+    <CreateTask
+      fromEE
+      templatePicker={onSelect => (
+        <CreateContent useMockTemplates onTemplateStart={onSelect} />
+      )}
+    />
+  );
+}
 
 /** Execution environment discovery entry point. */
 export function EERoutesPage(): ReactElement {
@@ -19,7 +32,7 @@ export function EERoutesPage(): ReactElement {
           />
           <Route path="images" element={<EECatalogPage view="images" />} />
           <Route path="catalog" element={<EECatalogPage view="catalog" />} />
-          <Route path="create" element={<EECatalogPage view="create" />} />
+          <Route path="create" element={<EECreateTemplateRoute />} />
           <Route path=":ref" element={<EEDetailsPage />} />
           <Route path="*" element={<Navigate to="images" replace />} />
         </Routes>
