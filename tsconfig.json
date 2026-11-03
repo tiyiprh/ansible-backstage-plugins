@@ -22,9 +22,7 @@
     "workspaces/portal-scaffolder/plugins/*/dev",
     "workspaces/portal-scaffolder/plugins/*/src"
   ],
-  "exclude": [
-    "node_modules"
-  ],
+  "exclude": ["node_modules"],
   "compilerOptions": {
     "outDir": "dist-types",
     "rootDir": ".",
