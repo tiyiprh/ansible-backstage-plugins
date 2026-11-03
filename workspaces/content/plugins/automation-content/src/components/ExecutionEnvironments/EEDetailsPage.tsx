@@ -81,11 +81,6 @@ export function EEDetailsPage(): ReactElement {
   const api = useApi(automationContentApiRef);
   const catalog = useApi(catalogApiRef);
   const { isStarredEntity, toggleStarredEntity } = useStarredEntities();
-  // Catalog-owned preferences are optional; they never gate artifact details.
-  const entities = useAsyncRetry(
-    () => catalog.getEntities({ filter: { kind: 'Component' } }),
-    [catalog],
-  );
   const base = useRouteRef(eeRouteRef)();
   const collectionsBase = useRouteRef(collectionsRouteRef)();
   const [params, setParams] = useSearchParams();
@@ -99,6 +94,17 @@ export function EEDetailsPage(): ReactElement {
     () => api.getExecutionEnvironment(ref),
     [api, ref],
   );
+  const digest = image.value?.digest;
+  // Catalog-owned preferences are optional; they never gate artifact details.
+  const entities = useAsyncRetry(async () => {
+    if (!digest) return undefined;
+    return catalog.getEntities({
+      filter: {
+        kind: 'Component',
+        'metadata.annotations.ansible.com/digest': [digest],
+      },
+    });
+  }, [catalog, digest]);
   const contents = useAsyncRetry(() => api.getContents(ref), [api, ref]);
   const data = useMemo(
     () =>

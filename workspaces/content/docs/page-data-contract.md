@@ -119,12 +119,12 @@ Readme card is **deferred** (no git readme exists for registry artifacts).
 
 ## Deferred capability register
 
-| Capability                          | Reason                                                                                                                                     | Where it lives instead |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------- |
-| Build EE image dialog               | **In scope** (2026-10-29): definition workflows live here, per Tina's prototype; backend execution lands when the owning team populates it | here                   |
-| SCM token handling                  | Only needed by the build flow — **this plugin must not handle tokens at all**                                                              | portal-scaffolder      |
-| Edit / unregister entity            | **In scope** (2026-10-29): rendered per the prototype's entity-annotation gating                                                           | here                   |
-| Readme / links / resources from git | No SCM metadata on artifacts                                                                                                               | —                      |
+| Capability                          | Reason                                                                                                                                                                                                            | Where it lives instead |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| Build EE image dialog               | **In scope** (2026-10-29): definition workflows live here, per Tina's prototype; backend execution lands when the owning team populates it                                                                        | here                   |
+| SCM token handling                  | No registry or portal credentials are handled or stored by this plugin; the build flow forwards the requesting user's own SCM token to the backend in a header per the established pattern and never persists it. | portal-scaffolder      |
+| Edit / unregister entity            | **In scope** (2026-10-29): rendered per the prototype's entity-annotation gating                                                                                                                                  | here                   |
+| Readme / links / resources from git | No SCM metadata on artifacts                                                                                                                                                                                      | —                      |
 
 ## Testing requirements
 

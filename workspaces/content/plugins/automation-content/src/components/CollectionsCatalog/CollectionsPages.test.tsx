@@ -5,7 +5,7 @@ import {
   mockApis,
 } from '@backstage/test-utils';
 import { permissionApiRef } from '@backstage/plugin-permission-react';
-import { Route, Routes } from 'react-router-dom';
+import { Link, Route, Routes } from 'react-router-dom';
 import { automationContentApiRef, type Collection } from '../../api';
 import { CollectionsCatalogPage } from './CollectionsCatalogPage';
 import { CollectionDetailsPage } from './CollectionDetailsPage';
@@ -63,7 +63,15 @@ function mount(path: string) {
     >
       <Routes>
         <Route path="/" element={<CollectionsCatalogPage />} />
-        <Route path="/:namespace/:name" element={<CollectionDetailsPage />} />
+        <Route
+          path="/:namespace/:name"
+          element={
+            <>
+              <Link to="/other/missing">Another collection</Link>
+              <CollectionDetailsPage />
+            </>
+          }
+        />
       </Routes>
     </TestApiProvider>,
     { routeEntries: [path] },
@@ -93,6 +101,14 @@ it('opens dotted collection details with version context and provider aggregatio
   expect(await screen.findByText('Version 1.9.0')).toBeTruthy();
   expect(screen.getByRole('link', { name: 'r/ee@sha256:one' })).toBeTruthy();
   expect(screen.getByRole('link', { name: 'r/ee@sha256:two' })).toBeTruthy();
+});
+
+it('reuses the collection list when navigating between collection details', async () => {
+  await mount('/ns/name_with.dots');
+  await screen.findByText('Version 1.10.0');
+  fireEvent.click(screen.getByRole('link', { name: 'Another collection' }));
+  await screen.findByText('Collection not found');
+  expect(api.listCollections).toHaveBeenCalledTimes(1);
 });
 
 it('shows all computed versions when latest-only is turned off', async () => {
@@ -147,6 +163,8 @@ it('renders shared documentation preserving the providing artifact', async () =>
       name: 'ns.name_with.dots.module in r/ee@sha256:two',
     }),
   ).toBeTruthy();
+  expect(api.listCollections).not.toHaveBeenCalled();
+  expect(api.searchContentItems).not.toHaveBeenCalled();
 });
 
 it('shows every version/provider relationship in the environments table', async () => {

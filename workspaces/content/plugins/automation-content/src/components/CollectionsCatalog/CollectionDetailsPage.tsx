@@ -50,20 +50,8 @@ function CollectionDetailsContent() {
     name: string;
   }>();
   const fqcn = `${namespace}.${name}`;
-  const api = useApi(automationContentApiRef);
   const base = useRouteRef(collectionsRouteRef)();
-  const environmentBase = useRouteRef(eeRouteRef)();
-  const [params, setParams] = useSearchParams();
-  const result = useAsyncRetry(() => api.listCollections(), [api, fqcn]);
-  const group = groupCollections(result.value ?? []).find(g => g.fqcn === fqcn);
-  const version =
-    group?.versions.find(v => v.version === params.get('version')) ??
-    group?.versions[0];
-  const selected = ['about', 'content', 'environments'].includes(
-    params.get('tab') ?? '',
-  )
-    ? params.get('tab')!
-    : 'about';
+  const [params] = useSearchParams();
   const href = collectionHref(base, namespace, name);
   const item = params.get('item');
   const scope = params.get('in') ?? undefined;
@@ -85,6 +73,31 @@ function CollectionDetailsContent() {
         </Flex>
       </Container>
     );
+  return <CollectionOverview />;
+}
+
+function CollectionOverview() {
+  const { namespace = '', name = '' } = useParams<{
+    namespace: string;
+    name: string;
+  }>();
+  const fqcn = `${namespace}.${name}`;
+  const api = useApi(automationContentApiRef);
+  const base = useRouteRef(collectionsRouteRef)();
+  const environmentBase = useRouteRef(eeRouteRef)();
+  const [params, setParams] = useSearchParams();
+  const result = useAsyncRetry(() => api.listCollections(), [api]);
+  const group = groupCollections(result.value ?? []).find(g => g.fqcn === fqcn);
+  const version =
+    group?.versions.find(v => v.version === params.get('version')) ??
+    group?.versions[0];
+  const selected = ['about', 'content', 'environments'].includes(
+    params.get('tab') ?? '',
+  )
+    ? params.get('tab')!
+    : 'about';
+  const href = collectionHref(base, namespace, name);
+  const scope = params.get('in') ?? undefined;
   return (
     <Container>
       <Flex direction="column" gap="4">

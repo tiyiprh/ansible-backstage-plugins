@@ -34,6 +34,7 @@ const image: ExecutionEnvironment = {
 it.each(['registry/repo@sha256:one', 'registry/repo@sha256:two'])(
   'keeps collections scoped to %s',
   async ref => {
+    const getEntities = jest.fn().mockResolvedValue({ items: [] });
     const getContents = jest.fn().mockResolvedValue({
       enumeration: image.enumeration,
       collections: [
@@ -50,7 +51,7 @@ it.each(['registry/repo@sha256:one', 'registry/repo@sha256:two'])(
     render(
       <TestApiProvider
         apis={[
-          [catalogApiRef, { getEntities: async () => ({ items: [] }) }],
+          [catalogApiRef, { getEntities }],
           [
             automationContentApiRef,
             {
@@ -74,6 +75,12 @@ it.each(['registry/repo@sha256:one', 'registry/repo@sha256:two'])(
       new URLSearchParams({ in: ref, version: '1.0.0' }).toString(),
     );
     expect(getContents).toHaveBeenCalledWith(ref);
+    expect(getEntities).toHaveBeenCalledWith({
+      filter: {
+        kind: 'Component',
+        'metadata.annotations.ansible.com/digest': [image.digest],
+      },
+    });
     expect(screen.getByText('Approximate: 2')).toBeTruthy();
   },
 );
@@ -96,10 +103,11 @@ it('shows artifact overview, tags, honest contents and copy action without autho
       },
     },
   };
+  const getEntities = jest.fn().mockResolvedValue({ items: [entity] });
   render(
     <TestApiProvider
       apis={[
-        [catalogApiRef, { getEntities: async () => ({ items: [entity] }) }],
+        [catalogApiRef, { getEntities }],
         [
           automationContentApiRef,
           {
@@ -136,6 +144,12 @@ it('shows artifact overview, tags, honest contents and copy action without autho
     screen.getByRole('button', { name: /Add repo sha256:one to favorites/ }),
   );
   expect(toggleStarredEntity).toHaveBeenCalledWith(entity);
+  expect(getEntities).toHaveBeenCalledWith({
+    filter: {
+      kind: 'Component',
+      'metadata.annotations.ansible.com/digest': [image.digest],
+    },
+  });
   await userEvent.click(
     screen.getByRole('button', { name: 'Copy pull reference' }),
   );
