@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { TestApiProvider } from '@backstage/test-utils';
 import { automationContentApiRef } from '../../api';
@@ -46,12 +46,17 @@ it('keeps documentation links and backend searches scoped to the immutable image
     screen.getByRole('searchbox', { name: 'Search content items' }),
     'mount',
   );
-  expect(searchContentItems).toHaveBeenLastCalledWith({
-    in: ref,
-    collection: undefined,
-    q: 'mount',
-    limit: 500,
+  // Typing does not dispatch intermediate queries before the debounce settles.
+  expect(searchContentItems).toHaveBeenCalledTimes(1);
+  await waitFor(() => {
+    expect(searchContentItems).toHaveBeenLastCalledWith({
+      in: ref,
+      collection: undefined,
+      q: 'mount',
+      limit: 500,
+    });
   });
+  expect(searchContentItems).toHaveBeenCalledTimes(2);
 });
 
 it('does not report request failures as empty content', async () => {

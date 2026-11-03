@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { CellText, Table, useTable, type ColumnConfig } from '@backstage/ui';
 import type { Collection } from '../../api';
 import { EmptyState } from '../common';
@@ -17,12 +18,16 @@ export function CollectionEnvironmentsTable({
   versions: Collection[];
   environmentBase: string;
 }) {
-  const data = versions.flatMap(version =>
-    version.providedBy.map(ref => ({
-      id: `${version.version}:${ref}`,
-      version: version.version,
-      ref,
-    })),
+  const data = useMemo(
+    () =>
+      versions.flatMap(version =>
+        version.providedBy.map(ref => ({
+          id: `${version.version}:${ref}`,
+          version: version.version,
+          ref,
+        })),
+      ),
+    [versions],
   );
   const table = useTable<ProviderRow>({
     mode: 'complete',

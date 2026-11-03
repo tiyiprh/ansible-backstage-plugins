@@ -104,11 +104,12 @@ export const createTarArchive = (
 
     const padding = (BLOCK_SIZE - (content.length % BLOCK_SIZE)) % BLOCK_SIZE;
     const paddingArray = padding > 0 ? new Array(padding).fill(0) : [];
-    tarData.push(
-      ...Array.from(header),
-      ...Array.from(content),
-      ...paddingArray,
-    );
+    // Append bytes individually so large files cannot exceed argument limits.
+    for (const bytes of [header, content, paddingArray]) {
+      for (const byte of bytes) {
+        tarData.push(byte);
+      }
+    }
   }
 
   tarData.push(...new Array(BLOCK_SIZE * 2).fill(0));

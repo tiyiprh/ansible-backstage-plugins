@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
+import { isHttpUrl } from '@ansible/automation-content-common';
 import { ANNOTATION_EDIT_URL, Entity } from '@backstage/catalog-model';
 import { useApi, useRouteRef } from '@backstage/core-plugin-api';
 import {
@@ -279,7 +280,8 @@ export function EEListPage({
             rawUrl ?? '',
             entity.metadata.name ?? '',
           );
-          if (urlToOpen)
+          // Silently skip invalid or non-HTTP(S) source URLs.
+          if (isHttpUrl(urlToOpen))
             window.open(urlToOpen, '_blank', 'noopener,noreferrer');
         };
         return (

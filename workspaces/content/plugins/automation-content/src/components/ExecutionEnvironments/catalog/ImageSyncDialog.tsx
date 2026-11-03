@@ -59,22 +59,32 @@ export function ImageSyncDialog({
     setSyncing(true);
     setError('');
     try {
-      const results = await Promise.all(
-        selected.map(async name => ({
-          name,
-          result: await api.syncRegistry(name),
-        })),
+      const results = await Promise.allSettled(
+        selected.map(name => api.syncRegistry(name)),
       );
       const status = results
-        .map(
-          ({ name, result }) =>
-            `${name}: ${
-              result.status === 'completed' ? 'sync completed' : 'sync failed'
-            }`,
-        )
+        .map((result, index) => {
+          if (result.status === 'rejected') {
+            const reason =
+              result.reason instanceof Error
+                ? result.reason.message
+                : String(result.reason);
+            return `${selected[index]}: ${reason}`;
+          }
+          return `${selected[index]}: ${
+            result.value.status === 'completed'
+              ? 'sync completed'
+              : 'sync failed'
+          }`;
+        })
         .join('; ');
       onSynced(status);
-      if (results.some(({ result }) => result.status === 'failed'))
+      if (
+        results.some(
+          result =>
+            result.status === 'rejected' || result.value.status !== 'completed',
+        )
+      )
         setError(status);
       else onClose();
     } catch {

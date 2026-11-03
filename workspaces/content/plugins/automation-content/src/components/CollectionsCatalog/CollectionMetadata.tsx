@@ -22,12 +22,15 @@ export function CollectionMetadata({
       </Text>
       <Text weight="bold">Provided by</Text>
       {providedBy.length ? (
-        <ul>
-          {providedBy.map(ref => (
+        <ul title={providedBy.join(', ')}>
+          {providedBy.slice(0, 10).map(ref => (
             <li key={ref}>
-              <Link href={environmentHref(environmentBase, ref)}>{ref}</Link>
+              <Link href={environmentHref(environmentBase, ref)} title={ref}>
+                {ref}
+              </Link>
             </li>
           ))}
+          {providedBy.length > 10 && <li>+{providedBy.length - 10} more</li>}
         </ul>
       ) : (
         <Text>No providing execution environments reported.</Text>

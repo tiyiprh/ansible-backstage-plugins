@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
 import useAsyncRetry from 'react-use/lib/useAsyncRetry';
+import useDebounce from 'react-use/lib/useDebounce';
 import { useApi } from '@backstage/core-plugin-api';
 import {
   Button,
@@ -32,15 +33,17 @@ export function ContentItemsTable({
 }): ReactElement {
   const api = useApi(automationContentApiRef);
   const [query, setQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState(query);
+  useDebounce(() => setDebouncedQuery(query), 300, [query]);
   const result = useAsyncRetry(
     () =>
       api.searchContentItems({
         in: inArtifact,
         collection,
-        q: query,
+        q: debouncedQuery,
         limit: 500,
       }),
-    [api, inArtifact, collection, query],
+    [api, inArtifact, collection, debouncedQuery],
   );
   const data = useMemo(
     () =>

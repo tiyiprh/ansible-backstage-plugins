@@ -29,8 +29,13 @@ export function OptionTree({
           </Text>
           {spec.required && <Badge>required</Badge>}
         </Flex>
-        {spec.choices && (
-          <Text>Choices: {spec.choices.map(String).join(' | ')}</Text>
+        {spec.choices !== undefined && spec.choices !== null && (
+          <Text>
+            Choices:{' '}
+            {(Array.isArray(spec.choices) ? spec.choices : [spec.choices])
+              .map(String)
+              .join(' | ')}
+          </Text>
         )}
         {spec.default !== undefined && (
           <Text>

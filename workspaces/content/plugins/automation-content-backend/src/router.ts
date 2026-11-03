@@ -212,9 +212,11 @@ export async function createRouter(
         next();
         return;
       }
-    } catch {
+    } catch (error) {
       // Missing identities and failed catalog lookups fail closed without leaking details.
-      logger.warn('Unable to authorize content registry sync');
+      logger.warn('Unable to authorize content registry sync', {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
     res.status(403).json({ error: 'Forbidden: superuser access required' });
   };
