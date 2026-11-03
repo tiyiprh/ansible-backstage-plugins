@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
-import { isHttpUrl } from '@ansible/automation-content-common';
+// Subpath import: the package barrel re-exports the OCI client, which uses
+// Node built-ins that cannot enter a browser bundle.
+import { isHttpUrl } from '@ansible/automation-content-common/url';
 import { ANNOTATION_EDIT_URL, Entity } from '@backstage/catalog-model';
 import { useApi, useRouteRef } from '@backstage/core-plugin-api';
 import {
