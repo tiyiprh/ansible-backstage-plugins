@@ -1,8 +1,23 @@
 import { Badge, Box, Flex, Text } from '@backstage/ui';
 import type { OptionSpec } from '../../api';
 
+/**
+ * Real ansible modules nest options two or three levels deep; anything past
+ * this cap is pathological manifest data (or a self-referential loop), which
+ * would otherwise recurse the renderer until the tab dies.
+ */
+const MAX_OPTION_DEPTH = 20;
+
 /** Recursive argument documentation; nested fields stay keyboard-discoverable. */
-export function OptionTree({ name, spec }: { name: string; spec: OptionSpec }) {
+export function OptionTree({
+  name,
+  spec,
+  depth = 1,
+}: {
+  name: string;
+  spec: OptionSpec;
+  depth?: number;
+}) {
   return (
     <Box pl="3" mb="3">
       <Flex direction="column" gap="2">
@@ -35,11 +50,16 @@ export function OptionTree({ name, spec }: { name: string; spec: OptionSpec }) {
               {line}
             </Text>
           ))}
-        {spec.suboptions && (
+        {spec.suboptions && depth < MAX_OPTION_DEPTH && (
           <details open>
             <summary>Suboptions for {name}</summary>
             {Object.entries(spec.suboptions).map(([child, childSpec]) => (
-              <OptionTree key={child} name={child} spec={childSpec} />
+              <OptionTree
+                key={child}
+                name={child}
+                spec={childSpec}
+                depth={depth + 1}
+              />
             ))}
           </details>
         )}
