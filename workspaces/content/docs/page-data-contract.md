@@ -20,8 +20,8 @@ Three data sources, in priority order:
    documentation, provenance and sync. All API calls go through the
    authenticated Backstage fetch (`fetchApi`); the frontend never talks to a
    registry directly.
-2. **Backstage catalog** — only for user-owned signals: favourites/stars and
-   entity ownership display. Never the source of inventory truth.
+2. **Backstage catalog** — definition-file entities, favourites/stars, and
+   entity ownership display. Never the source of registry-image inventory truth.
 3. **Nothing else.** No direct SCM, registry, or proxy calls.
 
 ## Identity and matching rules
@@ -46,8 +46,8 @@ Three data sources, in priority order:
 Mounted at the content workspace's own endpoint per the 2026-11-02 sync
 decision endorsed by Ganesh. The content workspace owns the discovery view;
 portal-scaffolder is untouched, and its legacy pages coexist unconfigured.
-The old native path `/automation-content/execution-environments` redirects here;
-the legacy host continues to mount the catalog at that old path.
+The old `/automation-content/execution-environments` path redirects here in
+both hosts.
 `/content` and `/automation-content` redirect to `/content/ee`; there is no
 separate content landing page or Content navigation item.
 The EE catalog header owns the admin Sync action (`syncAll()`), with
@@ -55,32 +55,52 @@ per-registry results surfaced as portal notifications.
 
 Tina's `ImagesCatalogPage` layout, artifact data:
 
-| UI element               | Source / mapping                                                                                                               |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| Row identity             | `repository` (+ `registry` as secondary text)                                                                                  |
-| Tags                     | `tags` (digest shown as short sha)                                                                                             |
-| Freshness                | `lastReconciledAt` (relative time)                                                                                             |
-| Inventory fidelity badge | `enumeration.status` + `enumeration.source`; `contentsKnown` false ⇒ "contents unknown" badge, never render counts as complete |
-| Volume indicators        | `counts.collections` / `counts.plugins` labelled approximate when `enumeration.status !== 'complete'`                          |
-| Classification           | `classification.type` with `confidence`                                                                                        |
-| Search / filter          | client-side over the loaded list                                                                                               |
-| Favourites               | catalog stars (matching rules above)                                                                                           |
-| Row action               | navigate to EE details — **no** build, edit, or SCM actions                                                                    |
+| UI element               | Source / mapping                                                                                                                                                   |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Row identity             | `repository` (+ `registry` as secondary text)                                                                                                                      |
+| Source                   | Registry display name and source label. A definition-file source requires an explicit association, not an inferred name match.                                     |
+| Freshness                | `lastReconciledAt` (relative time)                                                                                                                                 |
+| Inventory fidelity badge | `enumeration.status` + `enumeration.source`; `contentsKnown` false ⇒ "contents unknown" badge, never render counts as complete                                     |
+| Volume indicators        | `counts.collections` / `counts.plugins` labelled approximate when `enumeration.status !== 'complete'`                                                              |
+| Status                   | Last reconciliation result and age; Stale currently uses a 24-hour frontend threshold. Missing history is displayed as Syncing, not verified active-job telemetry. |
+| Classification           | `classification.type` when available; never append a missing confidence value                                                                                      |
+| Search / filter          | client-side search over the loaded page, plus the all-images toggle; no facet sidebar                                                                              |
+| Favourites               | catalog stars (matching rules above)                                                                                                                               |
+| Row actions              | Visible favourite star; menu with Use in Controller, Sync, and View details. Sync refreshes the owning registry and requires backend superuser access.             |
+
+Tags and digests are displayed in image details, not in the catalog table.
+The client uses server pagination with 10, 20, or 50 rows per page. Changing the
+page size returns to page 1; no pre-pagination response fallback remains.
 
 ### EE details (`/content/ee/…`)
 
-Tina's `EEDetailsPage` tabs, artifact data:
+Image details follow the selected-image branch in Tina's
+`ExecutionEnvironments/catalog/ImagesCatalogPage.tsx`. Her separate
+`catalog/EEDetailsPage.tsx` is the definition-file view, not the image view.
 
-| Tab                       | Content                                                                                                                                                                                                                                                                  |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| About                     | `ref`, `registry`, `repository`, `digest`, `tags`, `pullReference` (copy action), `classification`, `enumeration` (source, status, `ansibleCore`, `extractedAt`), `lastReconciledAt`                                                                                     |
-| Collections in this image | `getContents(ref)` — `collections[]` with per-collection `counts`; row navigates to collection details scoped to this artifact                                                                                                                                           |
-| Content items             | `searchContentItems({ in: ref, … })`; item row navigates to item documentation                                                                                                                                                                                           |
-| Item documentation        | `getContentItem(fqcn, inArtifact)` — description, notes, options tree, examples, returns. This must preserve the old `ContentItemView` capability (ansible-doc style rendering), including the `variants` fallback behaviour in `AutomationContentClient.getContentItem` |
+| Tab                | Content                                                                                                                                                                                                                                                                  |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Overview           | Compact metadata list with source/status labels, registry, digest, tags, pull reference with a standalone copy control, classification, available inventory metadata, and last synchronization time. The image menu does not contain a duplicate copy action.            |
+| Collections        | `getContents(ref)` — columns Collection, Version, Status, Publisher, Signing, Source, Contents. Content counts form one summary, not separate count columns. Unavailable status/publisher/signing/source values say Not reported; never infer certification or signing.  |
+| Item documentation | `getContentItem(fqcn, inArtifact)` — description, notes, options tree, examples, returns. This must preserve the old `ContentItemView` capability (ansible-doc style rendering), including the `variants` fallback behaviour in `AutomationContentClient.getContentItem` |
+
+Overview and Collections are the only image-details tabs. Collection-level
+content/documentation views and existing direct documentation links remain
+supported. Contents that are unknown or partial must be explained, but the
+routine raw `complete inventory · build-time-manifest` readout is not part of
+the reviewed design.
 
 Readme-from-git, links cards, and resources cards remain
 **deferred** (no git readme exists for registry artifacts). Build/edit
 actions moved into scope — see the capability register below.
+
+For definition-file-origin images, Tina's `portalDefinitionName` link targets
+the definition entity's details; it is distinct from her future external
+definition-file tab. Porting that definition details view is approved as UI
+work. The production image API/provider does not yet expose the image-to-
+definition association. Use an explicit catalog-entity relationship when that
+backend connection is implemented; do not infer one from image or registry
+names. The definition page must not be confused with image details.
 
 **Scope decision (2026-10-29):** EE definition workflows are retained in
 this plugin. Tina's prototype is the authoritative design. A different
@@ -91,9 +111,8 @@ now.
 
 Mounted at the content-workspace path per the 2026-11-02 direction: the content
 workspace owns the collections view, and portal-scaffolder's legacy page
-coexists unconfigured. The old native path
-`/automation-content/collections` redirects here; the legacy host continues to
-mount the catalog at that old path.
+coexists unconfigured. The old `/automation-content/collections` path redirects
+here in both hosts.
 
 Tina's `CollectionsListPage` / `CollectionsCatalogPage` layout, artifact data:
 
@@ -125,6 +144,41 @@ Readme card is **deferred** (no git readme exists for registry artifacts).
 | SCM token handling                  | No registry or portal credentials are handled or stored by this plugin; the build flow forwards the requesting user's own SCM token to the backend in a header per the established pattern and never persists it. | portal-scaffolder      |
 | Edit / unregister entity            | **In scope** (2026-10-29): rendered per the prototype's entity-annotation gating                                                                                                                                  | here                   |
 | Readme / links / resources from git | No SCM metadata on artifacts                                                                                                                                                                                      | —                      |
+
+## Implementation follow-ups for the pull request
+
+The pull-request description must distinguish rendered UI from implemented
+backend behavior. Update this list with evidence before describing an item as
+complete; update the PR body only after an authorized push.
+
+| Area                         | Frontend state                                                                                        | Backend or integration follow-up                                                                                                                                                             |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Use in Controller            | Dialog submits through the real scaffolder API.                                                       | The referenced `template:default/ee-use-in-controller` template is absent. Supply and integrate it; a rendered dialog is not a working Controller workflow.                                  |
+| Definition-file relationship | Source presentation exists; porting Tina's definition detail page and navigation is approved UI work. | The image API/provider does not identify the definition entity that produced an image. Establish that association explicitly; test records are not proof that real image relationships work. |
+| Collection metadata          | Columns for Status, Publisher, Signing, and Source render Not reported when absent.                   | Expose actual reported values through the data contract. Do not synthesize certification, publishers, signatures, or original collection sources from namespaces or image registries.        |
+| Signing evidence             | Image signing is Unknown; missing collection signing is Not reported.                                 | Confirm which evidence can be retrieved and expose it under an agreed contract. A signature does not imply a safety review or certification.                                                 |
+| Favorites                    | Current UI reuses Backstage catalog stars for linked entities.                                        | Confirm whether that persistence meets the feature requirements; a separate artifact-favorites backend has not been implemented by adding the visible star.                                  |
+| Sync status                  | Result/age-based labels are displayed.                                                                | If Syncing is intended to mean an active operation, provide actual operation state. Missing reconciliation history alone does not establish that a job is running.                           |
+
+Registry sync endpoints and server pagination already exist; they are not
+frontend-only placeholders. Sync authorization and registry-wide scope still
+apply. Wider collection grouping/pagination and search beyond the current EE
+page should be tracked separately rather than implied by the current controls.
+
+### Local test data is not a production feature
+
+The production UI is exercised with local Utopia examples. The development
+adapter requires both `NODE_ENV=development` and an explicit local
+`automationContent.development.demoImages` opt-in; it is inactive by default
+and in production. `automationContent.development.sourceRef` can supply the
+actual contents of a local image to the status/source/time variants. Unknown
+and never-reconciled cases intentionally retain unknown contents.
+
+Local test configuration and registry data stay outside the pull request.
+The UI has no demo banners or per-row demo labels. Synthetic references remain
+isolated from real mutation requests; test data must not silently create
+Controller resources or trigger registry operations. These fixtures do not
+establish that missing backend integrations are implemented.
 
 ## Testing requirements
 

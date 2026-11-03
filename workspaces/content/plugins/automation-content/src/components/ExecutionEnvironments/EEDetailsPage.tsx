@@ -562,10 +562,6 @@ export function EEDetailsPage(): ReactElement {
                   <Button onPress={contents.retry}>Retry</Button>
                 </div>
               )}
-              <Text>
-                {contents.value?.enumeration.status ?? 'Unknown'} inventory ·{' '}
-                {contents.value?.enumeration.source ?? 'Unknown source'}
-              </Text>
               <Card className={styles.detailSurface}>
                 <CardBody className={styles.detailSurfaceBody}>
                   <div aria-busy={contents.loading} className={styles.table}>

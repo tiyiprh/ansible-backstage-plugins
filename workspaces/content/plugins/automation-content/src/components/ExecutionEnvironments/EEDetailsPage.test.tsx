@@ -50,12 +50,20 @@ const image: ExecutionEnvironment = {
   collections: [],
 };
 
-it.each(['registry/repo@sha256:one', 'registry/repo@sha256:two'])(
+it.each([
+  ['registry/repo@sha256:one', image.enumeration, 'Approximate: 2 plugins'],
+  ['registry/repo@sha256:two', image.enumeration, 'Approximate: 2 plugins'],
+  [
+    'registry/repo@sha256:complete',
+    { status: 'complete', source: 'build-time-manifest' } satisfies Enumeration,
+    '2 plugins',
+  ],
+] as const)(
   'keeps collections scoped to %s',
-  async ref => {
+  async (ref, enumeration, expectedContents) => {
     const getEntities = jest.fn().mockResolvedValue({ items: [] });
     const getContents = jest.fn().mockResolvedValue({
-      enumeration: image.enumeration,
+      enumeration,
       collections: [
         {
           namespace: 'ansible',
@@ -74,7 +82,11 @@ it.each(['registry/repo@sha256:one', 'registry/repo@sha256:two'])(
           [
             automationContentApiRef,
             {
-              getExecutionEnvironment: async () => ({ ...image, ref }),
+              getExecutionEnvironment: async () => ({
+                ...image,
+                ref,
+                enumeration,
+              }),
               getContents,
             },
           ],
@@ -105,7 +117,8 @@ it.each(['registry/repo@sha256:one', 'registry/repo@sha256:two'])(
         'metadata.annotations.ansible.com/digest': [image.digest],
       },
     });
-    expect(screen.getByText('Approximate: 2 plugins')).toBeTruthy();
+    expect(screen.getByText(expectedContents)).toBeTruthy();
+    expect(screen.queryByText(/inventory ·/)).toBeNull();
     expect(
       screen
         .getAllByRole('columnheader')
