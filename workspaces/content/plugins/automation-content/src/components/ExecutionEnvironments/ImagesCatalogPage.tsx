@@ -69,11 +69,6 @@ export function ImagesCatalogPage({
     () => api.listExecutionEnvironments({ allTypes, page }),
     [api, allTypes, page],
   );
-  // Catalog failure must never hide backend inventory.
-  const entities = useAsyncRetry(
-    () => catalog.getEntities({ filter: { kind: 'Component' } }),
-    [catalog],
-  );
   /**
    * Where the artifact came from. Registry scans are the only source today;
    * definition-file builds join this dimension when that integration lands.
@@ -101,6 +96,20 @@ export function ImagesCatalogPage({
     () => images.value?.items.map(image => ({ ...image, id: image.ref })),
     [images.value],
   );
+
+  // Catalog failure must never hide backend inventory. Only fetch candidates
+  // for this page; annotation values are ORed within the digest filter.
+  const entities = useAsyncRetry(async () => {
+    if (!data?.length) return { items: [] };
+    return catalog.getEntities({
+      filter: {
+        kind: 'Component',
+        'metadata.annotations.ansible.com/digest': [
+          ...new Set(data.map(image => image.digest)),
+        ],
+      },
+    });
+  }, [catalog, data]);
 
   const entityByImageRef = useMemo(() => {
     const linked = new Map<string, Entity>();

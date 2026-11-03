@@ -3,8 +3,12 @@ import { MemoryRouter } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import { TestApiProvider } from '@backstage/test-utils';
 import { catalogApiRef } from '@backstage/plugin-catalog-react';
+import type { Entity } from '@backstage/catalog-model';
 import { automationContentApiRef, type ExecutionEnvironment } from '../../api';
 import { ImagesCatalogPage } from './ImagesCatalogPage';
+
+const mockIsStarredEntity = jest.fn((_entity: Entity) => false);
+const mockToggleStarredEntity = jest.fn();
 
 jest.mock('@backstage/core-plugin-api', () => ({
   ...jest.requireActual('@backstage/core-plugin-api'),
@@ -13,10 +17,15 @@ jest.mock('@backstage/core-plugin-api', () => ({
 jest.mock('@backstage/plugin-catalog-react', () => ({
   ...jest.requireActual('@backstage/plugin-catalog-react'),
   useStarredEntities: () => ({
-    isStarredEntity: () => false,
-    toggleStarredEntity: jest.fn(),
+    isStarredEntity: (entity: Entity) => mockIsStarredEntity(entity),
+    toggleStarredEntity: (entity: Entity) => mockToggleStarredEntity(entity),
   }),
 }));
+
+beforeEach(() => {
+  mockIsStarredEntity.mockReset().mockReturnValue(false);
+  mockToggleStarredEntity.mockReset();
+});
 
 const base: ExecutionEnvironment = {
   ref: 'r/repo@sha256:one',
@@ -144,17 +153,19 @@ it('uses server totals, fetches page 2 and resets pagination when all types chan
         Array.from({ length: 10 }, (_, index) => ({
           ...base,
           ref: `r/repo@sha256:${page}-${index}`,
+          digest: `sha256:${page}-${index}`,
           repository: `repo-${page}-${index}`,
         })),
         page,
         26,
       ),
   );
+  const getEntities = jest.fn(async () => ({ items: [] }));
   render(
     <TestApiProvider
       apis={[
         [automationContentApiRef, { listExecutionEnvironments }],
-        [catalogApiRef, { getEntities: async () => ({ items: [] }) }],
+        [catalogApiRef, { getEntities }],
       ]}
     >
       <MemoryRouter>
@@ -163,6 +174,17 @@ it('uses server totals, fetches page 2 and resets pagination when all types chan
     </TestApiProvider>,
   );
   expect(await screen.findByText('1 - 10 of 26')).toBeTruthy();
+  await waitFor(() =>
+    expect(getEntities).toHaveBeenLastCalledWith({
+      filter: {
+        kind: 'Component',
+        'metadata.annotations.ansible.com/digest': Array.from(
+          { length: 10 },
+          (_, index) => `sha256:1-${index}`,
+        ),
+      },
+    }),
+  );
   expect(
     screen.queryByRole('combobox', { name: 'Select table page size' }),
   ).toBeNull();
@@ -175,6 +197,17 @@ it('uses server totals, fetches page 2 and resets pagination when all types chan
     page: 2,
   });
   expect(await screen.findByRole('link', { name: 'repo-2-0' })).toBeTruthy();
+  await waitFor(() =>
+    expect(getEntities).toHaveBeenLastCalledWith({
+      filter: {
+        kind: 'Component',
+        'metadata.annotations.ansible.com/digest': Array.from(
+          { length: 10 },
+          (_, index) => `sha256:2-${index}`,
+        ),
+      },
+    }),
+  );
   await userEvent.click(screen.getByRole('checkbox', { name: /all images/ }));
   await waitFor(() =>
     expect(listExecutionEnvironments).toHaveBeenLastCalledWith({
@@ -208,6 +241,91 @@ it('keeps favorites filtering on the current page', async () => {
   expect(await screen.findByText('No images match your filters')).toBeTruthy();
   await userEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
   expect(await screen.findByRole('link', { name: 'repo' })).toBeTruthy();
+});
+
+it('skips the catalog request for an empty page', async () => {
+  const getEntities = jest.fn(async () => ({ items: [] }));
+  render(
+    <TestApiProvider
+      apis={[
+        [
+          automationContentApiRef,
+          { listExecutionEnvironments: async () => envelope([]) },
+        ],
+        [catalogApiRef, { getEntities }],
+      ]}
+    >
+      <MemoryRouter>
+        <ImagesCatalogPage />
+      </MemoryRouter>
+    </TestApiProvider>,
+  );
+  await screen.findByText('0 images loaded');
+  expect(getEntities).not.toHaveBeenCalled();
+});
+
+it('keeps inventory visible when the filtered catalog request fails', async () => {
+  const getEntities = jest.fn(async () => {
+    throw new Error('offline');
+  });
+  render(
+    <TestApiProvider
+      apis={[
+        [
+          automationContentApiRef,
+          { listExecutionEnvironments: async () => envelope([base]) },
+        ],
+        [catalogApiRef, { getEntities }],
+      ]}
+    >
+      <MemoryRouter>
+        <ImagesCatalogPage />
+      </MemoryRouter>
+    </TestApiProvider>,
+  );
+  await screen.findByText(
+    'Catalog links are unavailable. Favorites may be missing.',
+  );
+  expect(screen.getByRole('link', { name: 'repo' })).toBeTruthy();
+});
+
+it('preserves precise matching and favorites for shared digests', async () => {
+  mockIsStarredEntity.mockImplementation(
+    entity => entity.metadata.name === linkedEntity.metadata.name,
+  );
+  const other = { ...base, ref: 'r/other@sha256:one', repository: 'other' };
+  const getEntities = jest.fn(async () => ({ items: [linkedEntity] }));
+  render(
+    <TestApiProvider
+      apis={[
+        [
+          automationContentApiRef,
+          { listExecutionEnvironments: async () => envelope([base, other]) },
+        ],
+        [catalogApiRef, { getEntities }],
+      ]}
+    >
+      <MemoryRouter>
+        <ImagesCatalogPage />
+      </MemoryRouter>
+    </TestApiProvider>,
+  );
+  await screen.findByRole('link', { name: 'repo' });
+  await waitFor(() =>
+    expect(mockIsStarredEntity).toHaveBeenCalledWith(linkedEntity),
+  );
+  expect(getEntities).toHaveBeenCalledTimes(1);
+  expect(getEntities).toHaveBeenCalledWith({
+    filter: {
+      kind: 'Component',
+      'metadata.annotations.ansible.com/digest': [base.digest],
+    },
+  });
+  await userEvent.click(
+    screen.getByRole('checkbox', { name: 'Favorites only' }),
+  );
+  expect(screen.getByRole('link', { name: 'repo' })).toBeTruthy();
+  expect(screen.queryByRole('link', { name: 'other' })).toBeNull();
 });
 
 it('renders source, source-type, status, and content facets', async () => {
