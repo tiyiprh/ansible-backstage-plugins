@@ -1,6 +1,9 @@
 import type { Entity } from '@backstage/catalog-model';
 import type { ExecutionEnvironment } from '../../api';
 
+/** Reconciliation results older than this are displayed as stale. */
+export const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
+
 /** Match immutable provider annotations, never a mutable tag or truncated entity name. */
 export function matchesEnvironment(
   entity: Entity,
@@ -50,9 +53,8 @@ export function relativeTime(value?: string): string {
 }
 
 /**
- * Row sync state, derived from the owning registry's last read. Wording follows
- * the reviewed prototype: Available / Syncing / Failed. A "Stale" state does not
- * exist in the backend yet.
+ * Row sync state, derived from the owning registry's last reconciliation time
+ * and outcome.
  */
 export function syncStateLabel(
   lastReconciledAt?: string,
@@ -60,6 +62,8 @@ export function syncStateLabel(
 ): string {
   if (!lastReconciledAt) return 'Syncing';
   if (lastReconcileOk === false) return 'Failed';
+  const reconciledAt = new Date(lastReconciledAt).getTime();
+  if (Date.now() - reconciledAt > STALE_AFTER_MS) return 'Stale';
   return 'Available';
 }
 

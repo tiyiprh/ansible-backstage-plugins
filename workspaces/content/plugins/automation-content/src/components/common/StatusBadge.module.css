@@ -1,0 +1,38 @@
+/* BUI's documented theming path: class names + CSS variables. Delete this when Badge grows a status prop. */
+:global(.bui-Badge).success,
+:global(.bui-Badge).info,
+:global(.bui-Badge).danger,
+:global(.bui-Badge).warning,
+:global(.bui-Badge).neutral {
+  /* Pill shape, matching the reviewed prototype; BUI's default badge radius
+     is radius-2 (subtle). */
+  border-radius: var(--bui-radius-full);
+}
+
+:global(.bui-Badge).neutral {
+  /* Neutral keeps BUI's default badge colors; only the shape is shared. */
+}
+
+:global(.bui-Badge).success {
+  background-color: var(--bui-bg-success);
+  color: var(--bui-fg-success-on-bg);
+  border: 1px solid var(--bui-border-success);
+}
+
+:global(.bui-Badge).info {
+  background-color: var(--bui-bg-info);
+  color: var(--bui-fg-info-on-bg);
+  border: 1px solid var(--bui-border-info);
+}
+
+:global(.bui-Badge).danger {
+  background-color: var(--bui-bg-danger);
+  color: var(--bui-fg-danger-on-bg);
+  border: 1px solid var(--bui-border-danger);
+}
+
+:global(.bui-Badge).warning {
+  background-color: var(--bui-bg-warning);
+  color: var(--bui-fg-warning-on-bg);
+  border: 1px solid var(--bui-border-warning);
+}

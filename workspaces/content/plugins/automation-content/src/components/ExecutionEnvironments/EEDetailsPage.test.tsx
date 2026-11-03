@@ -3,6 +3,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { TestApiProvider } from '@backstage/test-utils';
 import userEvent from '@testing-library/user-event';
 import { catalogApiRef } from '@backstage/plugin-catalog-react';
+import { scaffolderApiRef } from '@backstage/plugin-scaffolder-react';
 import { automationContentApiRef, type ExecutionEnvironment } from '../../api';
 import { EEDetailsPage } from './EEDetailsPage';
 
@@ -10,12 +11,25 @@ jest.mock('@backstage/core-plugin-api', () => ({
   ...jest.requireActual('@backstage/core-plugin-api'),
   useRouteRef: () => () => '/content',
 }));
-const toggleStarredEntity = jest.fn();
+let entityStarred = false;
+const toggleStarredEntity = jest.fn((_entity: unknown) => {
+  entityStarred = !entityStarred;
+});
+beforeAll(() => {
+  const cssApi = globalThis.CSS ?? ({} as typeof CSS);
+  if (!cssApi.escape) {
+    cssApi.escape = value => value.replace(/[^a-zA-Z0-9_-]/g, '\\$&');
+  }
+  Object.defineProperty(globalThis, 'CSS', {
+    configurable: true,
+    value: cssApi,
+  });
+});
 jest.mock('@backstage/plugin-catalog-react', () => ({
   ...jest.requireActual('@backstage/plugin-catalog-react'),
   useStarredEntities: () => ({
-    isStarredEntity: () => false,
-    toggleStarredEntity: (...args: unknown[]) => toggleStarredEntity(...args),
+    isStarredEntity: () => entityStarred,
+    toggleStarredEntity: (entity: unknown) => toggleStarredEntity(entity),
   }),
 }));
 
@@ -85,7 +99,7 @@ it.each(['registry/repo@sha256:one', 'registry/repo@sha256:two'])(
   },
 );
 
-it('shows artifact overview, tags, honest contents and copy action without authoring controls', async () => {
+it('shows artifact overview, themed source and status, and controller actions', async () => {
   const writeText = jest.fn().mockResolvedValue(undefined);
   Object.defineProperty(navigator, 'clipboard', {
     configurable: true,
@@ -104,10 +118,12 @@ it('shows artifact overview, tags, honest contents and copy action without autho
     },
   };
   const getEntities = jest.fn().mockResolvedValue({ items: [entity] });
-  render(
+  const scaffold = jest.fn().mockRejectedValue(new Error('template not found'));
+  const { rerender } = render(
     <TestApiProvider
       apis={[
         [catalogApiRef, { getEntities }],
+        [scaffolderApiRef, { scaffold }],
         [
           automationContentApiRef,
           {
@@ -136,14 +152,63 @@ it('shows artifact overview, tags, honest contents and copy action without autho
   expect(
     await screen.findByRole('tab', { name: 'Overview', selected: true }),
   ).toBeTruthy();
+  expect(screen.getByRole('tab', { name: 'Collections' })).toBeTruthy();
   expect(screen.getByText('Contents unknown')).toBeTruthy();
   expect(screen.queryByText('0 collections / 0 plugins')).toBeNull();
   expect(screen.getByText('latest')).toBeTruthy();
   expect(screen.getByText('1.0')).toBeTruthy();
+  expect(screen.getByText('External registry')).toBeTruthy();
+  expect(screen.getByText('Syncing')).toBeTruthy();
+  expect(screen.getByText('labels')).toBeTruthy();
+  expect(screen.queryByText('Provenance')).toBeNull();
   await userEvent.click(
-    screen.getByRole('button', { name: /Add repo sha256:one to favorites/ }),
+    screen.getByRole('button', { name: 'Actions for repo' }),
   );
+  expect(
+    screen.getByRole('menuitem', { name: 'Use in controller' }),
+  ).toBeTruthy();
+  expect(screen.getByRole('menuitem', { name: 'Sync' })).toBeTruthy();
+  expect(
+    screen.getByRole('menuitem', { name: 'Copy pull reference' }),
+  ).toBeTruthy();
+  expect(screen.getByRole('menuitem', { name: 'Favorite' })).toBeTruthy();
+  await userEvent.click(screen.getByRole('menuitem', { name: 'Favorite' }));
   expect(toggleStarredEntity).toHaveBeenCalledWith(entity);
+  rerender(
+    <TestApiProvider
+      apis={[
+        [catalogApiRef, { getEntities }],
+        [scaffolderApiRef, { scaffold }],
+        [
+          automationContentApiRef,
+          {
+            getExecutionEnvironment: async () => ({
+              ...image,
+              contentsKnown: false,
+              counts: { collections: 0, plugins: 0 },
+              tags: ['latest', '1.0'],
+            }),
+            getContents: async () => ({
+              enumeration: image.enumeration,
+              collections: [],
+              items: [],
+            }),
+          },
+        ],
+      ]}
+    >
+      <MemoryRouter initialEntries={[`/${encodeURIComponent(image.ref)}`]}>
+        <Routes>
+          <Route path=":ref" element={<EEDetailsPage />} />
+        </Routes>
+      </MemoryRouter>
+    </TestApiProvider>,
+  );
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Actions for repo' }),
+  );
+  expect(screen.getByRole('menuitem', { name: 'Unfavorite' })).toBeTruthy();
+  await userEvent.keyboard('{Escape}');
   expect(getEntities).toHaveBeenCalledWith({
     filter: {
       kind: 'Component',
@@ -151,12 +216,36 @@ it('shows artifact overview, tags, honest contents and copy action without autho
     },
   });
   await userEvent.click(
+    screen.getByRole('button', { name: 'Actions for repo' }),
+  );
+  await userEvent.click(
+    screen.getByRole('menuitem', { name: 'Use in controller' }),
+  );
+  expect(await screen.findByRole('dialog')).toBeTruthy();
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Use in controller' }),
+  );
+  expect((await screen.findByRole('alert')).textContent).toContain(
+    'This action is not available yet. The task template was not found.',
+  );
+  expect(scaffold).toHaveBeenCalledWith({
+    templateRef: 'template:default/ee-use-in-controller',
+    values: {
+      environmentName: 'repo',
+      environmentDescription: 'Use repo in Ansible Automation Controller.',
+      image: image.pullReference,
+      pull: 'always',
+      organization: '',
+    },
+  });
+  await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  await userEvent.click(
     screen.getByRole('button', { name: 'Copy pull reference' }),
   );
   expect(writeText).toHaveBeenCalledWith(image.pullReference);
   expect(await screen.findByText('Pull reference copied')).toBeTruthy();
   expect(
-    screen.queryByRole('button', { name: /Build|Edit|Sync|Use in Controller/ }),
+    screen.queryByRole('tab', { name: 'Collections in this image' }),
   ).toBeNull();
   expect(screen.queryByRole('tab', { name: 'Definition file' })).toBeNull();
 });

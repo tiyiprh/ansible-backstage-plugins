@@ -3,12 +3,18 @@ import { MemoryRouter } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import { TestApiProvider } from '@backstage/test-utils';
 import { catalogApiRef } from '@backstage/plugin-catalog-react';
+import { scaffolderApiRef } from '@backstage/plugin-scaffolder-react';
 import type { Entity } from '@backstage/catalog-model';
-import { automationContentApiRef, type ExecutionEnvironment } from '../../api';
+import {
+  automationContentApiRef,
+  ContentApiError,
+  type ExecutionEnvironment,
+} from '../../api';
 import { ImagesCatalogPage } from './ImagesCatalogPage';
 
 const mockIsStarredEntity = jest.fn((_entity: Entity) => false);
 const mockToggleStarredEntity = jest.fn();
+let entityStarred = false;
 
 jest.mock('@backstage/core-plugin-api', () => ({
   ...jest.requireActual('@backstage/core-plugin-api'),
@@ -17,14 +23,30 @@ jest.mock('@backstage/core-plugin-api', () => ({
 jest.mock('@backstage/plugin-catalog-react', () => ({
   ...jest.requireActual('@backstage/plugin-catalog-react'),
   useStarredEntities: () => ({
-    isStarredEntity: (entity: Entity) => mockIsStarredEntity(entity),
-    toggleStarredEntity: (entity: Entity) => mockToggleStarredEntity(entity),
+    isStarredEntity: (entity: Entity) =>
+      mockIsStarredEntity(entity) || entityStarred,
+    toggleStarredEntity: (entity: Entity) => {
+      mockToggleStarredEntity(entity);
+      entityStarred = !entityStarred;
+    },
   }),
 }));
 
 beforeEach(() => {
   mockIsStarredEntity.mockReset().mockReturnValue(false);
   mockToggleStarredEntity.mockReset();
+  entityStarred = false;
+});
+
+beforeAll(() => {
+  const cssApi = globalThis.CSS ?? ({} as typeof CSS);
+  if (!cssApi.escape) {
+    cssApi.escape = value => value.replace(/[^a-zA-Z0-9_-]/g, '\\$&');
+  }
+  Object.defineProperty(globalThis, 'CSS', {
+    configurable: true,
+    value: cssApi,
+  });
 });
 
 const base: ExecutionEnvironment = {
@@ -108,7 +130,7 @@ it('defaults to classified EEs and refetches everything when toggled', async () 
   );
   expect(await screen.findByRole('link', { name: 'repo' })).toBeTruthy();
   expect(
-    screen.getByRole('heading', { name: 'Execution Environments images (1)' }),
+    screen.getByRole('heading', { name: 'Execution environment images (1)' }),
   ).toBeTruthy();
   expect(listExecutionEnvironments).toHaveBeenLastCalledWith({
     allTypes: false,
@@ -144,8 +166,12 @@ it('retains search controls when no images match and clears the filters', async 
     screen.getByRole('searchbox', { name: 'Search images' }),
     'absent',
   );
-  expect(await screen.findByText('No images match your filters')).toBeTruthy();
-  await userEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+  expect(
+    await screen.findByText('No images match your search or filters'),
+  ).toBeTruthy();
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Clear search and filters' }),
+  );
   expect(await screen.findByRole('link', { name: 'repo' })).toBeTruthy();
   expect(screen.queryByRole('button', { name: /Sync|Build|Edit/ })).toBeNull();
 });
@@ -244,8 +270,12 @@ it('keeps favorites filtering on the current page', async () => {
   await userEvent.click(
     screen.getByRole('checkbox', { name: 'Favorites only' }),
   );
-  expect(await screen.findByText('No images match your filters')).toBeTruthy();
-  await userEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+  expect(
+    await screen.findByText('No images match your search or filters'),
+  ).toBeTruthy();
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Clear search and filters' }),
+  );
   expect(await screen.findByRole('link', { name: 'repo' })).toBeTruthy();
 });
 
@@ -376,31 +406,14 @@ it('preserves precise matching and favorites for shared digests', async () => {
   expect(screen.queryByRole('link', { name: 'other' })).toBeNull();
 });
 
-it('renders source, source-type, status, and content facets', async () => {
-  const second: ExecutionEnvironment = {
-    ...base,
-    ref: 'other/second@sha256:two',
-    registry: 'other',
-    repository: 'second',
-    digest: 'sha256:two',
-    tags: ['stable'],
-  };
-  const unlinked: ExecutionEnvironment = {
-    ...base,
-    ref: 'orphan/orphan@sha256:three',
-    registry: 'orphan',
-    repository: 'orphan',
-    digest: 'sha256:three',
-    tags: ['orphan'],
-  };
+it('keeps search and the all-images toggle without the facet rail', async () => {
   const { container } = render(
     <TestApiProvider
       apis={[
         [
           automationContentApiRef,
           {
-            listExecutionEnvironments: async () =>
-              envelope([base, second, unlinked]),
+            listExecutionEnvironments: async () => envelope([base]),
           },
         ],
         [
@@ -416,50 +429,39 @@ it('renders source, source-type, status, and content facets', async () => {
   );
 
   expect(await screen.findByRole('link', { name: 'repo' })).toBeTruthy();
-  expect(screen.getByRole('columnheader', { name: 'Source' })).toBeTruthy();
+  expect(screen.getByRole('searchbox', { name: 'Search images' })).toBeTruthy();
   expect(
-    screen.getByRole('button', { name: /Filter by source$/ }),
+    screen.getByRole('checkbox', { name: 'Show all images' }),
   ).toBeTruthy();
-  expect(
-    screen.getByRole('button', { name: /Filter by source type/ }),
-  ).toBeTruthy();
-  expect(screen.getByRole('button', { name: /Filter by status/ })).toBeTruthy();
-  expect(
-    screen.getByRole('button', { name: /Filter by content/ }),
-  ).toBeTruthy();
-  expect(screen.queryByRole('button', { name: /Filter by tag/ })).toBeNull();
-  expect(screen.queryByRole('columnheader', { name: 'Owner' })).toBeNull();
-  expect(screen.queryByRole('button', { name: /Filter by owner/ })).toBeNull();
-
-  const facets = container.querySelectorAll('select');
-  fireEvent.change(facets[0], { target: { value: 'r' } });
-  await waitFor(() =>
-    expect(screen.queryByRole('link', { name: 'second' })).toBeNull(),
-  );
-  expect(screen.getByRole('link', { name: 'repo' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Filters' })).toBeNull();
+  expect(screen.queryByRole('button', { name: /Filter by/ })).toBeNull();
+  expect(container.querySelectorAll('select')).toHaveLength(1);
+  expect(screen.getByRole('columnheader', { name: 'Status' })).toBeTruthy();
+  expect(screen.getByText('R')).toBeTruthy();
+  expect(screen.getByText('External registry')).toBeTruthy();
+  expect(screen.getByText('Syncing')).toBeTruthy();
 });
 
-it('filters by content state on the current page', async () => {
-  const unknown: ExecutionEnvironment = {
-    ...base,
-    ref: 'r/other@sha256:two',
-    repository: 'other',
-    digest: 'sha256:two',
-    contentsKnown: false,
-    enumeration: { status: 'unknown', source: 'external-introspection' },
-  };
-  const { container } = render(
+it('shows the star toggle and reviewed row actions, including the unavailable controller action', async () => {
+  const scaffold = jest.fn().mockRejectedValue(new Error('template not found'));
+  const syncRegistry = jest
+    .fn()
+    .mockRejectedValue(new ContentApiError(403, 'Forbidden'));
+  const { rerender } = render(
     <TestApiProvider
       apis={[
         [
           automationContentApiRef,
           {
-            listExecutionEnvironments: jest.fn(async () =>
-              envelope([base, unknown]),
-            ),
+            listExecutionEnvironments: async () => envelope([base]),
+            syncRegistry,
           },
         ],
-        [catalogApiRef, { getEntities: async () => ({ items: [] }) }],
+        [
+          catalogApiRef,
+          { getEntities: async () => ({ items: [linkedEntity] }) },
+        ],
+        [scaffolderApiRef, { scaffold }],
       ]}
     >
       <MemoryRouter>
@@ -469,12 +471,74 @@ it('filters by content state on the current page', async () => {
   );
 
   await screen.findByRole('link', { name: 'repo' });
-  expect(screen.getByRole('link', { name: 'other' })).toBeTruthy();
-  // Rail select order: source, source type, status, content.
-  const contentSelect = container.querySelectorAll('select')[3];
-  fireEvent.change(contentSelect, { target: { value: 'unknown' } });
-  expect(await screen.findByRole('link', { name: 'other' })).toBeTruthy();
-  expect(screen.queryByRole('link', { name: 'repo' })).toBeNull();
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Add repo to favorites' }),
+  );
+  expect(mockToggleStarredEntity).toHaveBeenCalledWith(linkedEntity);
+  rerender(
+    <TestApiProvider
+      apis={[
+        [
+          automationContentApiRef,
+          {
+            listExecutionEnvironments: async () => envelope([base]),
+            syncRegistry,
+          },
+        ],
+        [
+          catalogApiRef,
+          { getEntities: async () => ({ items: [linkedEntity] }) },
+        ],
+        [scaffolderApiRef, { scaffold }],
+      ]}
+    >
+      <MemoryRouter>
+        <ImagesCatalogPage />
+      </MemoryRouter>
+    </TestApiProvider>,
+  );
+  expect(
+    screen
+      .getByRole('button', { name: 'Remove repo from favorites' })
+      .getAttribute('aria-pressed'),
+  ).toBe('true');
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Actions for repo' }),
+  );
+  expect(
+    screen.getByRole('menuitem', { name: 'Use in controller' }),
+  ).toBeTruthy();
+  expect(screen.getByRole('menuitem', { name: 'Sync' })).toBeTruthy();
+  expect(
+    screen.getByRole('menuitem', { name: 'Copy pull reference' }),
+  ).toBeTruthy();
+  expect(screen.getByRole('menuitem', { name: 'View details' })).toBeTruthy();
+  expect(screen.queryByRole('menuitem', { name: /favorite/i })).toBeNull();
+
+  await userEvent.click(
+    screen.getByRole('menuitem', { name: 'Use in controller' }),
+  );
+  expect(await screen.findByRole('dialog')).toBeTruthy();
+  expect(
+    screen.getByRole('textbox', { name: 'Execution environment name' }),
+  ).toHaveProperty('value', 'repo');
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Use in controller' }),
+  );
+  expect((await screen.findByRole('alert')).textContent).toContain(
+    'This action is not available yet. The task template was not found.',
+  );
+  expect(scaffold).toHaveBeenCalled();
+
+  await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Actions for repo' }),
+  );
+  await userEvent.click(screen.getByRole('menuitem', { name: 'Sync' }));
+  expect(syncRegistry).toHaveBeenCalledWith('r');
+  expect((await screen.findByRole('alert')).textContent).toContain(
+    'Sync access needed for R.',
+  );
 });
 
 it('labels partial counts and unknown contents without requiring catalog matches', async () => {

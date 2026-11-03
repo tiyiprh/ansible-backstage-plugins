@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import type { ReactElement } from 'react';
+import { useNavigate } from 'react-router-dom';
 import useAsyncRetry from 'react-use/lib/useAsyncRetry';
 import { useApi, useRouteRef } from '@backstage/core-plugin-api';
 import type { Entity } from '@backstage/catalog-model';
@@ -17,27 +17,33 @@ import {
   ColumnConfig,
   Container,
   Flex,
+  Link,
   Menu,
   MenuItem,
   MenuTrigger,
-  Select,
+  SearchField,
   Table,
   Text,
   useTable,
 } from '@backstage/ui';
+import StarIcon from '@material-ui/icons/Star';
+import StarBorderIcon from '@material-ui/icons/StarBorder';
 import MoreVertIcon from '@material-ui/icons/MoreVert';
-import { automationContentApiRef, type ExecutionEnvironment } from '../../api';
-import { eeRouteRef } from '../../routes';
 import {
-  CatalogExplorerLayout,
-  EmptyState,
-  PageHeaderSection,
-} from '../common';
+  automationContentApiRef,
+  ContentApiError,
+  type ExecutionEnvironment,
+} from '../../api';
+import { eeRouteRef } from '../../routes';
+import { EmptyState, PageHeaderSection, StatusBadge } from '../common';
+import type { StatusBadgeTone } from '../common';
+import { UseInControllerDialog } from './UseInControllerDialog';
 import {
   environmentHref,
   imageContentsSummary,
   matchesEnvironment,
   relativeTime,
+  sourceLabel,
   syncStateLabel,
 } from './catalogHelpers';
 import styles from './details.module.css';
@@ -46,7 +52,18 @@ interface ImageRow extends ExecutionEnvironment {
   id: string;
 }
 
-/** Registry inventory with client-side filtering and optional catalog-owned stars. */
+function displayRegistryName(registry: string): string {
+  return registry.charAt(0).toUpperCase() + registry.slice(1);
+}
+
+function syncStatusTone(status: string): StatusBadgeTone {
+  if (status === 'Available') return 'success';
+  if (status === 'Failed') return 'danger';
+  if (status === 'Stale') return 'warning';
+  return 'info';
+}
+
+/** Registry inventory with client-side search and optional catalog-owned stars. */
 export function ImagesCatalogPage({
   showHeader = true,
   wrapInContainer = true,
@@ -61,29 +78,16 @@ export function ImagesCatalogPage({
   const { isStarredEntity, toggleStarredEntity } = useStarredEntities();
   const [starredOnly, setStarredOnly] = useState(false);
   const [allTypes, setAllTypes] = useState(false);
-  const [source, setSource] = useState('all');
-  const [sourceType, setSourceType] = useState('all');
-  const [status, setStatus] = useState('all');
-  const [contentState, setContentState] = useState('all');
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(10);
+  const [syncError, setSyncError] = useState('');
+  const [syncingRegistry, setSyncingRegistry] = useState('');
+  const [controllerImage, setControllerImage] =
+    useState<ExecutionEnvironment | null>(null);
   const images = useAsyncRetry(
     () => api.listExecutionEnvironments({ allTypes, page, perPage }),
     [api, allTypes, page, perPage],
   );
-  /**
-   * Where the artifact came from. Registry scans are the only source today;
-   * definition-file builds join this dimension when that integration lands.
-   */
-  const sourceTypeLabel = (_image: ExecutionEnvironment): string =>
-    'external registry';
-
-  /** Whether the artifact's inventory is known, approximate, or unknown. */
-  const contentLabel = (image: ExecutionEnvironment): string => {
-    if (!image.contentsKnown) return 'unknown';
-    return image.enumeration.status === 'complete' ? 'known' : 'approximate';
-  };
-
   const data = useMemo(
     () => images.value?.items.map(image => ({ ...image, id: image.ref })),
     [images.value],
@@ -114,50 +118,9 @@ export function ImagesCatalogPage({
     return linked;
   }, [data, entities.value]);
 
-  const sources = useMemo(
-    () => [...new Set((data ?? []).map(image => image.registry))].sort(),
-    [data],
-  );
-  const sourceTypes = useMemo(
-    () =>
-      [...new Set((data ?? []).map(image => sourceTypeLabel(image)))].sort(),
-    [data],
-  );
-  const statuses = useMemo(
-    () =>
-      [
-        ...new Set(
-          (data ?? []).map(image =>
-            syncStateLabel(image.lastReconciledAt, image.lastReconcileOk),
-          ),
-        ),
-      ].sort(),
-    [data],
-  );
-  const contents = useMemo(
-    () => [...new Set((data ?? []).map(image => contentLabel(image)))].sort(),
-    [data],
-  );
-
-  // These facets filter only the currently fetched page; server-side filtering is not available yet.
-  const filteredData = useMemo(
-    () =>
-      (data ?? []).filter(image => {
-        return (
-          (source === 'all' || image.registry === source) &&
-          (sourceType === 'all' || sourceTypeLabel(image) === sourceType) &&
-          (status === 'all' ||
-            syncStateLabel(image.lastReconciledAt, image.lastReconcileOk) ===
-              status) &&
-          (contentState === 'all' || contentLabel(image) === contentState)
-        );
-      }),
-    [contentState, data, source, sourceType, status],
-  );
-
   const table = useTable<ImageRow>({
     mode: 'complete',
-    data: filteredData,
+    data,
     filter: starredOnly,
     filterFn: (rows, only) =>
       only
@@ -182,26 +145,59 @@ export function ImagesCatalogPage({
     // Search and favorites filter the fetched page, not the whole inventory.
     paginationOptions: { type: 'none' },
   });
+
+  const syncRegistry = async (registry: string): Promise<void> => {
+    setSyncingRegistry(registry);
+    setSyncError('');
+    try {
+      await api.syncRegistry(registry);
+      images.retry();
+    } catch (error) {
+      setSyncError(
+        error instanceof ContentApiError && error.status === 403
+          ? `Sync access needed for ${displayRegistryName(registry)}.`
+          : `Unable to sync ${displayRegistryName(registry)}.`,
+      );
+    } finally {
+      setSyncingRegistry('');
+    }
+  };
+
   const columns: ColumnConfig<ImageRow>[] = [
     {
       id: 'image',
       label: 'Image',
       isRowHeader: true,
       cell: row => (
-        <CellText
-          title={row.repository}
-          href={environmentHref(base, row.ref)}
-        />
+        <Cell>
+          <Link
+            href={environmentHref(base, row.ref)}
+            color="info"
+            className={styles.infoLink}
+          >
+            {row.repository}
+          </Link>
+        </Cell>
       ),
     },
     {
       id: 'source',
       label: 'Source',
       cell: row => (
-        // Ran/Tina combination: the actual source name with its type beneath.
-        // Definition-file artifacts — when that integration exists — render
-        // only "Definition file", with no registry name above them.
-        <CellText title={row.registry} description="external registry" />
+        <Cell>
+          <Flex direction="column" align="start" gap="1">
+            {row.registry && <Text>{displayRegistryName(row.registry)}</Text>}
+            <StatusBadge
+              tone={
+                sourceLabel(row.registry) === 'Definition file'
+                  ? 'info'
+                  : 'neutral'
+              }
+            >
+              {sourceLabel(row.registry)}
+            </StatusBadge>
+          </Flex>
+        </Cell>
       ),
     },
     {
@@ -220,13 +216,19 @@ export function ImagesCatalogPage({
       cell: row => <CellText title={imageContentsSummary(row)} />,
     },
     {
-      id: 'state',
-      label: 'State',
-      cell: row => (
-        <CellText
-          title={syncStateLabel(row.lastReconciledAt, row.lastReconcileOk)}
-        />
-      ),
+      id: 'status',
+      label: 'Status',
+      cell: row => {
+        const status = syncStateLabel(
+          row.lastReconciledAt,
+          row.lastReconcileOk,
+        );
+        return (
+          <Cell>
+            <StatusBadge tone={syncStatusTone(status)}>{status}</StatusBadge>
+          </Cell>
+        );
+      },
     },
     {
       id: 'last-synced',
@@ -241,37 +243,52 @@ export function ImagesCatalogPage({
         const starred = entity ? isStarredEntity(entity) : false;
         return (
           <Cell>
-            <MenuTrigger>
-              <ButtonIcon
-                variant="tertiary"
-                icon={<MoreVertIcon />}
-                aria-label={`Actions for ${row.repository}`}
-              />
-              <Menu>
-                {entity && (
-                  <MenuItem onAction={() => toggleStarredEntity(entity)}>{`${
-                    starred ? 'Remove from' : 'Add to'
-                  } favorites`}</MenuItem>
-                )}
-                <MenuItem
-                  onAction={() =>
-                    navigator.clipboard?.writeText(row.pullReference)
-                  }
-                >
-                  Copy pull reference
-                </MenuItem>
-                <MenuItem
-                  onAction={() => navigate(environmentHref(base, row.ref))}
-                >
-                  View details
-                </MenuItem>
-              </Menu>
-            </MenuTrigger>
+            <Flex align="center" gap="1">
+              {entity && (
+                <ButtonIcon
+                  variant="tertiary"
+                  icon={starred ? <StarIcon /> : <StarBorderIcon />}
+                  aria-pressed={starred}
+                  aria-label={`${starred ? 'Remove' : 'Add'} ${
+                    row.repository
+                  } ${starred ? 'from' : 'to'} favorites`}
+                  onPress={() => toggleStarredEntity(entity)}
+                />
+              )}
+              <MenuTrigger>
+                <ButtonIcon
+                  variant="tertiary"
+                  icon={<MoreVertIcon />}
+                  aria-label={`Actions for ${row.repository}`}
+                />
+                <Menu>
+                  <MenuItem onAction={() => setControllerImage(row)}>
+                    Use in controller
+                  </MenuItem>
+                  <MenuItem onAction={() => void syncRegistry(row.registry)}>
+                    {syncingRegistry === row.registry ? 'Syncing…' : 'Sync'}
+                  </MenuItem>
+                  <MenuItem
+                    onAction={() =>
+                      navigator.clipboard?.writeText(row.pullReference)
+                    }
+                  >
+                    Copy pull reference
+                  </MenuItem>
+                  <MenuItem
+                    onAction={() => navigate(environmentHref(base, row.ref))}
+                  >
+                    View details
+                  </MenuItem>
+                </Menu>
+              </MenuTrigger>
+            </Flex>
           </Cell>
         );
       },
     },
   ];
+
   const content = (
     <Flex direction="column" gap="4">
       {showHeader && (
@@ -280,52 +297,20 @@ export function ImagesCatalogPage({
           description="Discover immutable images from configured registries and inspect their Ansible content."
         />
       )}
-      <CatalogExplorerLayout
-        search="Search images"
-        searchValue={table.search.value}
-        onSearchChange={table.search.onChange}
-        filters={
-          <>
-            <Select
-              aria-label="Filter by source"
-              size="small"
-              value={source}
-              onChange={value => setSource(String(value))}
-              options={[
-                { value: 'all', label: 'All sources' },
-                ...sources.map(value => ({ value, label: value })),
-              ]}
-            />
-            <Select
-              aria-label="Filter by source type"
-              size="small"
-              value={sourceType}
-              onChange={value => setSourceType(String(value))}
-              options={[
-                { value: 'all', label: 'All source types' },
-                ...sourceTypes.map(value => ({ value, label: value })),
-              ]}
-            />
-            <Select
-              aria-label="Filter by status"
-              size="small"
-              value={status}
-              onChange={value => setStatus(String(value))}
-              options={[
-                { value: 'all', label: 'All statuses' },
-                ...statuses.map(value => ({ value, label: value })),
-              ]}
-            />
-            <Select
-              aria-label="Filter by content"
-              size="small"
-              value={contentState}
-              onChange={value => setContentState(String(value))}
-              options={[
-                { value: 'all', label: 'All contents' },
-                ...contents.map(value => ({ value, label: value })),
-              ]}
-            />
+      <Flex direction="column" gap="3">
+        <Flex
+          align="center"
+          justify="between"
+          gap="3"
+          className={styles.searchToolbar}
+        >
+          <SearchField
+            aria-label="Search images"
+            placeholder="Search images"
+            value={table.search.value}
+            onChange={table.search.onChange}
+          />
+          <Flex align="center" gap="3" className={styles.wrapFlex}>
             <Checkbox isSelected={starredOnly} onChange={setStarredOnly}>
               Favorites only
             </Checkbox>
@@ -338,11 +323,11 @@ export function ImagesCatalogPage({
             >
               Show all images
             </Checkbox>
-          </>
-        }
-      >
+          </Flex>
+        </Flex>
+        {syncError && <Text role="alert">{syncError}</Text>}
         <Text as="h2" variant="title-medium">
-          Execution Environments images
+          Execution environment images
           {images.value ? ` (${images.value.totalItems})` : ''}
         </Text>
         {images.error && (
@@ -385,12 +370,12 @@ export function ImagesCatalogPage({
                 <EmptyState
                   title={
                     data?.length
-                      ? 'No images match your filters'
+                      ? 'No images match your search or filters'
                       : 'No execution environments discovered'
                   }
                   description={
                     data?.length
-                      ? 'Change your search or filters.'
+                      ? 'Change your search or favorites filter.'
                       : 'Images appear after configured registries are reconciled.'
                   }
                   action={
@@ -400,13 +385,9 @@ export function ImagesCatalogPage({
                         onPress={() => {
                           table.search.onChange('');
                           setStarredOnly(false);
-                          setSource('all');
-                          setSourceType('all');
-                          setStatus('all');
-                          setContentState('all');
                         }}
                       >
-                        Clear filters
+                        Clear search and filters
                       </Button>
                     ) : undefined
                   }
@@ -415,7 +396,15 @@ export function ImagesCatalogPage({
             />
           )}
         </div>
-      </CatalogExplorerLayout>
+      </Flex>
+      {controllerImage && (
+        <UseInControllerDialog
+          open
+          imageName={controllerImage.repository}
+          pullReference={controllerImage.pullReference}
+          onClose={() => setControllerImage(null)}
+        />
+      )}
     </Flex>
   );
   return wrapInContainer ? <Container>{content}</Container> : content;

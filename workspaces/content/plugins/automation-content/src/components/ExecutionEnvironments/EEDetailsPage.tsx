@@ -10,6 +10,7 @@ import {
 import {
   Badge,
   Button,
+  ButtonIcon,
   Card,
   CardBody,
   CardHeader,
@@ -17,6 +18,9 @@ import {
   Container,
   Flex,
   Grid,
+  Menu,
+  MenuItem,
+  MenuTrigger,
   Skeleton,
   Tab,
   TabList,
@@ -33,17 +37,22 @@ import {
   type ArtifactContents,
 } from '../../api';
 import { collectionsRouteRef, eeRouteRef } from '../../routes';
-import { EmptyState, StarIcon } from '../common';
+import { EmptyState, PageHeaderSection, StatusBadge } from '../common';
+import type { StatusBadgeTone } from '../common';
 import { BreadcrumbsNavigation } from '../common/BreadcrumbsNavigation';
+import MoreVertIcon from '@material-ui/icons/MoreVert';
 import { ContentItemsTable } from './ContentItemsTable';
 import {
   environmentHref,
   imageContentsSummary,
   matchesEnvironment,
   relativeTime,
+  sourceLabel,
+  syncStateLabel,
 } from './catalogHelpers';
 import styles from './details.module.css';
 import { ContentItemDocumentation } from '../ContentItemDocumentation';
+import { UseInControllerDialog } from './UseInControllerDialog';
 
 type IncludedCollection = ArtifactContents['collections'][number];
 interface CollectionRow extends IncludedCollection {
@@ -75,6 +84,31 @@ function collectionEmptyCopy(
   };
 }
 
+function statusBadgeTone(status: string): StatusBadgeTone {
+  if (status === 'Available') return 'success';
+  if (status === 'Failed') return 'danger';
+  if (status === 'Stale') return 'warning';
+  return 'info';
+}
+
+function renderMetadataValue(label: string, value: string): ReactElement {
+  if (label === 'Source') {
+    return (
+      <StatusBadge tone={value === 'Definition file' ? 'info' : 'neutral'}>
+        {value}
+      </StatusBadge>
+    );
+  }
+  if (label === 'Status') {
+    return <StatusBadge tone={statusBadgeTone(value)}>{value}</StatusBadge>;
+  }
+  return (
+    <Text as="p" className={styles.wrap}>
+      {value}
+    </Text>
+  );
+}
+
 /** Artifact metadata and relationships, without definition-authoring or SCM actions. */
 export function EEDetailsPage(): ReactElement {
   const { ref = '' } = useParams<{ ref: string }>();
@@ -90,6 +124,9 @@ export function EEDetailsPage(): ReactElement {
     ? params.get('tab')!
     : 'overview';
   const [copyStatus, setCopyStatus] = useState('');
+  const [syncStatus, setSyncStatus] = useState('');
+  const [syncing, setSyncing] = useState(false);
+  const [controllerOpen, setControllerOpen] = useState(false);
   const image = useAsyncRetry(
     () => api.getExecutionEnvironment(ref),
     [api, ref],
@@ -167,12 +204,14 @@ export function EEDetailsPage(): ReactElement {
         Ref: value.ref,
         Registry: value.registry,
         Repository: value.repository,
+        Source: sourceLabel(value.registry),
+        Status: syncStateLabel(value.lastReconciledAt, value.lastReconcileOk),
         Digest: value.digest,
         Classification: value.classification
           ? `${value.classification.type} (${value.classification.confidence})`
           : 'Unknown',
         'Inventory status': value.enumeration.status,
-        'Inventory source': value.enumeration.source,
+        Origin: value.enumeration.source,
         'Ansible core': value.enumeration.ansibleCore ?? 'Unknown',
         'Extracted at': value.enumeration.extractedAt ?? 'Unknown',
         'Last reconciled': relativeTime(value.lastReconciledAt),
@@ -184,6 +223,35 @@ export function EEDetailsPage(): ReactElement {
     approximate,
   );
   const itemFqcn = params.get('item');
+  const syncImage = async (): Promise<void> => {
+    if (!value) return;
+    setSyncing(true);
+    setSyncStatus('');
+    try {
+      await api.syncRegistry(value.registry);
+      setSyncStatus('Sync started.');
+      image.retry();
+    } catch (error) {
+      setSyncStatus(
+        error instanceof ContentApiError && error.status === 403
+          ? 'Sync access needed for this registry.'
+          : 'Unable to sync this registry.',
+      );
+    } finally {
+      setSyncing(false);
+    }
+  };
+  const copyPullReference = async (): Promise<void> => {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value.pullReference);
+      setCopyStatus('Pull reference copied');
+    } catch {
+      setCopyStatus(
+        'Unable to copy. Select and copy the pull reference above.',
+      );
+    }
+  };
   if (itemFqcn) {
     return (
       <Container>
@@ -212,25 +280,36 @@ export function EEDetailsPage(): ReactElement {
             { label: value?.repository ?? ref },
           ]}
         />
-        <Flex align="center" gap="2">
-          <Text as="h1" variant="title-medium" className={styles.wrap}>
-            {value?.repository ?? 'Execution environment'}
-          </Text>
-          {entity && (
-            <Button
-              variant="tertiary"
-              aria-pressed={isStarredEntity(entity)}
-              aria-label={`${isStarredEntity(entity) ? 'Remove' : 'Add'} ${
-                value?.repository
-              } ${value?.digest} ${
-                isStarredEntity(entity) ? 'from' : 'to'
-              } favorites`}
-              onPress={() => toggleStarredEntity(entity)}
-            >
-              <StarIcon selected={isStarredEntity(entity)} />
-            </Button>
-          )}
-        </Flex>
+        <PageHeaderSection
+          title={value?.repository ?? 'Execution environment'}
+          actions={
+            value ? (
+              <MenuTrigger>
+                <ButtonIcon
+                  variant="tertiary"
+                  icon={<MoreVertIcon />}
+                  aria-label={`Actions for ${value.repository}`}
+                />
+                <Menu>
+                  <MenuItem onAction={() => setControllerOpen(true)}>
+                    Use in controller
+                  </MenuItem>
+                  <MenuItem onAction={() => void syncImage()}>
+                    {syncing ? 'Syncing…' : 'Sync'}
+                  </MenuItem>
+                  <MenuItem onAction={() => void copyPullReference()}>
+                    Copy pull reference
+                  </MenuItem>
+                  {entity && (
+                    <MenuItem onAction={() => toggleStarredEntity(entity)}>
+                      {isStarredEntity(entity) ? 'Unfavorite' : 'Favorite'}
+                    </MenuItem>
+                  )}
+                </Menu>
+              </MenuTrigger>
+            ) : undefined
+          }
+        />
         {entities.error && (
           <Text>
             Favorites are unavailable. Image details are still available.
@@ -254,6 +333,7 @@ export function EEDetailsPage(): ReactElement {
             <Button onPress={image.retry}>Retry</Button>
           </div>
         )}
+        {syncStatus && <Text role="status">{syncStatus}</Text>}
         {value && (
           <Tabs
             selectedKey={selected}
@@ -265,7 +345,7 @@ export function EEDetailsPage(): ReactElement {
           >
             <TabList aria-label="Execution environment details">
               <Tab id="overview">Overview</Tab>
-              <Tab id="collections">Collections in this image</Tab>
+              <Tab id="collections">Collections</Tab>
               <Tab id="content">Content items</Tab>
             </TabList>
             <TabPanel id="overview">
@@ -293,9 +373,7 @@ export function EEDetailsPage(): ReactElement {
                           >
                             {label}
                           </Text>
-                          <Text as="p" className={styles.wrap}>
-                            {text}
-                          </Text>
+                          {renderMetadataValue(label, text)}
                         </div>
                       ))}
                     </Grid.Root>
@@ -319,21 +397,7 @@ export function EEDetailsPage(): ReactElement {
                       Pull reference
                     </Text>
                     <Text className={styles.wrap}>{value.pullReference}</Text>
-                    <Button
-                      variant="secondary"
-                      onPress={async () => {
-                        try {
-                          await navigator.clipboard.writeText(
-                            value.pullReference,
-                          );
-                          setCopyStatus('Pull reference copied');
-                        } catch {
-                          setCopyStatus(
-                            'Unable to copy. Select and copy the pull reference above.',
-                          );
-                        }
-                      }}
-                    >
+                    <Button variant="secondary" onPress={copyPullReference}>
                       Copy pull reference
                     </Button>
                     <div role="status">{copyStatus}</div>
@@ -380,6 +444,14 @@ export function EEDetailsPage(): ReactElement {
               />
             </TabPanel>
           </Tabs>
+        )}
+        {controllerOpen && value && (
+          <UseInControllerDialog
+            open
+            imageName={value.repository}
+            pullReference={value.pullReference}
+            onClose={() => setControllerOpen(false)}
+          />
         )}
       </Flex>
     </Container>

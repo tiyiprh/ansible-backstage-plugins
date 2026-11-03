@@ -3,6 +3,8 @@ import {
   imageContentsSummary,
   matchesEnvironment,
   relativeTime,
+  STALE_AFTER_MS,
+  syncStateLabel,
 } from './catalogHelpers';
 import type { ExecutionEnvironment } from '../../api';
 
@@ -51,6 +53,32 @@ it('distinguishes missing and invalid reconciliation times', () => {
   expect(relativeTime(new Date(Date.now() - 60000).toISOString())).toBe(
     '1 minute ago',
   );
+});
+
+it('derives syncing, failed, stale, and available reconciliation states', () => {
+  jest.useFakeTimers();
+  const now = new Date('2025-01-01T12:00:00.000Z');
+  jest.setSystemTime(now);
+  try {
+    const withinThreshold = new Date(
+      now.getTime() - STALE_AFTER_MS + 1,
+    ).toISOString();
+    const exactlyAtThreshold = new Date(
+      now.getTime() - STALE_AFTER_MS,
+    ).toISOString();
+    const beyondThreshold = new Date(
+      now.getTime() - STALE_AFTER_MS - 1,
+    ).toISOString();
+
+    expect(syncStateLabel()).toBe('Syncing');
+    expect(syncStateLabel(undefined, false)).toBe('Syncing');
+    expect(syncStateLabel(beyondThreshold, false)).toBe('Failed');
+    expect(syncStateLabel(beyondThreshold, true)).toBe('Stale');
+    expect(syncStateLabel(withinThreshold, true)).toBe('Available');
+    expect(syncStateLabel(exactlyAtThreshold, true)).toBe('Available');
+  } finally {
+    jest.useRealTimers();
+  }
 });
 
 it('matches provider annotations and rejects another digest', () => {
