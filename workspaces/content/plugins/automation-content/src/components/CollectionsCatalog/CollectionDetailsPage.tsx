@@ -97,7 +97,6 @@ function CollectionOverview() {
     ? params.get('tab')!
     : 'about';
   const href = collectionHref(base, namespace, name);
-  const scope = params.get('in') ?? undefined;
   return (
     <Container>
       <Flex direction="column" gap="4">
@@ -220,13 +219,11 @@ function CollectionOverview() {
               </TabPanel>
               <TabPanel id="content">
                 <Text>
-                  Content across all indexed versions
-                  {scope ? ` in ${scope}` : ''}. Each row shows its collection
-                  version.
+                  Content across all indexed versions. Each row shows its
+                  collection version.
                 </Text>
                 <ContentItemsTable
                   collection={fqcn}
-                  inArtifact={scope}
                   itemHref={content => {
                     const next = new URLSearchParams(params);
                     next.set('tab', 'content');

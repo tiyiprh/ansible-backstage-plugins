@@ -6,7 +6,11 @@ import {
 } from '@backstage/test-utils';
 import { permissionApiRef } from '@backstage/plugin-permission-react';
 import { Link, Route, Routes } from 'react-router-dom';
-import { automationContentApiRef, type Collection } from '../../api';
+import {
+  automationContentApiRef,
+  type Collection,
+  type ContentItemSummary,
+} from '../../api';
 import { CollectionsCatalogPage } from './CollectionsCatalogPage';
 import { CollectionDetailsPage } from './CollectionDetailsPage';
 
@@ -46,7 +50,12 @@ const api = {
   listCollections: jest.fn(async (query?: string) =>
     query === 'missing' ? [] : items,
   ),
-  searchContentItems: jest.fn(async () => ({ totalItems: 0, items: [] })),
+  searchContentItems: jest.fn(
+    async (): Promise<{ totalItems: number; items: ContentItemSummary[] }> => ({
+      totalItems: 0,
+      items: [],
+    }),
+  ),
 };
 
 beforeEach(() => {
@@ -152,6 +161,37 @@ it('searches contents using collection identity', async () => {
   expect(api.searchContentItems).toHaveBeenCalledWith(
     expect.objectContaining({ collection: first.fqcn }),
   );
+});
+
+it('searches all providers despite an artifact URL scope and preserves each item provider', async () => {
+  api.searchContentItems.mockResolvedValueOnce({
+    totalItems: 2,
+    items: ['one', 'two'].map((digest, index) => ({
+      fqcn: `${first.fqcn}.module${index}`,
+      name: `module${index}`,
+      collection: first.fqcn,
+      collectionVersion: first.version,
+      type: 'module',
+      in: `r/ee@sha256:${digest}`,
+    })),
+  });
+  await mount('/ns/name_with.dots?tab=content&in=r%2Fee%40sha256%3Aone');
+  for (const [index, digest] of ['one', 'two'].entries()) {
+    const link = await screen.findByRole('link', {
+      name: `${first.fqcn}.module${index}`,
+    });
+    expect(
+      new URL(link.getAttribute('href')!, 'http://localhost').searchParams.get(
+        'itemIn',
+      ),
+    ).toBe(`r/ee@sha256:${digest}`);
+  }
+  expect(api.searchContentItems).toHaveBeenCalledWith({
+    collection: first.fqcn,
+    in: undefined,
+    q: '',
+    limit: 500,
+  });
 });
 
 it('renders shared documentation preserving the providing artifact', async () => {

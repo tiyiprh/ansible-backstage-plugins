@@ -37,6 +37,11 @@ export function ContentItemDocumentation({
   return (
     <Flex direction="column" gap="4">
       <PageHeaderSection title={fqcn} description={doc?.shortDescription} />
+      {doc?.in && (
+        <Text color="secondary" className={styles.wrap}>
+          Documentation from {doc.in}
+        </Text>
+      )}
       {result.loading && (
         <div aria-busy="true" aria-label="Loading documentation">
           <Text role="status">Loading documentation…</Text>

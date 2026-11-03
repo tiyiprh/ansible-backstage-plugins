@@ -63,3 +63,22 @@ it('normalizes the unscoped variants response in the client', async () => {
   });
   await expect(client.getContentItem(doc.fqcn)).resolves.toEqual(doc);
 });
+
+it.each([undefined, 'r/repo@sha256:two'])(
+  'shows the documentation provider only when present: %s',
+  async provider => {
+    const getContentItem = jest
+      .fn()
+      .mockResolvedValue({ ...doc, in: provider });
+    render(
+      <TestApiProvider apis={[[automationContentApiRef, { getContentItem }]]}>
+        <ContentItemDocumentation fqcn={doc.fqcn} />
+      </TestApiProvider>,
+    );
+    await screen.findByText('Manage mounts');
+    expect(screen.queryByText(/Documentation from/)?.textContent).toBe(
+      provider ? `Documentation from ${provider}` : undefined,
+    );
+    expect(getContentItem).toHaveBeenCalledWith(doc.fqcn, undefined);
+  },
+);
