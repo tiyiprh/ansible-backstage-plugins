@@ -9,6 +9,8 @@ import {
   convertLegacyRouteRef,
 } from '@backstage/core-compat-api';
 import { automationContentApiFactory } from './apis';
+import { CatalogTabBlueprint } from '@ansible/portal-extension-api/alpha';
+import { automationContentManifest } from './pluginManifest';
 import { Navigate, useParams } from 'react-router-dom';
 import BuildIcon from '@material-ui/icons/Build';
 import ExtensionIcon from '@material-ui/icons/Extension';
@@ -47,6 +49,21 @@ export const automationContentPlugin: FrontendPlugin = createFrontendPlugin({
     collectionDetails: convertLegacyRouteRef(collectionDetailsRouteRef),
   },
   extensions: [
+    CatalogTabBlueprint.make({
+      name: 'images',
+      params: {
+        manifest: automationContentManifest,
+        capabilityId: 'automation-content.discovery',
+        entryPointId: 'automation-content.discovery.images-tab',
+        attachment: 'catalog.tabs',
+        loader: async () => {
+          const { ImagesTabContent } = await import(
+            './components/ExecutionEnvironments/EECatalogPage'
+          );
+          return compatWrapper(<ImagesTabContent />);
+        },
+      },
+    }),
     ApiBlueprint.make({
       name: 'content',
       params: define => define(automationContentApiFactory),

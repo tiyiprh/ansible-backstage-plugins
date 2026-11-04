@@ -1,7 +1,15 @@
-import { useEffect, useState, type ReactElement } from 'react';
+import {
+  Suspense,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactElement,
+} from 'react';
 import SyncIcon from '@material-ui/icons/Sync';
 import { Box, Button, Flex, Tab, TabList, TabPanel, Tabs } from '@backstage/ui';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { CONTENT_TYPES } from '@ansible/portal-extension-api';
+import { useNativeCatalogTabs } from '@ansible/portal-extension-host/alpha';
 import {
   NotificationProvider,
   NotificationStack,
@@ -11,7 +19,7 @@ import {
 import { ImageSyncDialog } from './catalog/ImageSyncDialog';
 import { RegistrySyncButton } from './RegistrySyncButton';
 import { useRouteRef } from '@backstage/core-plugin-api';
-import { eeRouteRef } from '../../routes';
+import { eeDetailsRouteRef, eeRouteRef } from '../../routes';
 import { CreateContent } from './CreateContent';
 import { DefinitionFilesCatalogPage } from './DefinitionFilesCatalogPage';
 import { ImagesCatalogPage } from './ImagesCatalogPage';
@@ -20,11 +28,67 @@ import styles from './EECatalogPage.module.css';
 
 export type EECatalogView = 'images' | 'catalog' | 'create';
 
+/** Panel shared by the native SDK contribution and the legacy-host fallback. */
+export function ImagesTabContent(): ReactElement {
+  return <ImagesCatalogPage showHeader={false} wrapInContainer={false} />;
+}
+
 /** Shared EE catalog shell keeps each prototype tab addressable by its route. */
 function EETabs({ view }: { view: EECatalogView }): ReactElement {
   const navigate = useNavigate();
   const location = useLocation();
   const eeBase = useRouteRef(eeRouteRef)();
+  const detailLink = useRouteRef(eeDetailsRouteRef);
+  const [searchParams] = useSearchParams();
+  const catalogContext = useMemo(
+    () => ({
+      contentType: CONTENT_TYPES.EXECUTION_ENVIRONMENT_IMAGE,
+      entityDetailPath: (
+        name: string,
+        entryPointId?: string,
+        filters?: Record<string, string>,
+      ) => {
+        const params = new URLSearchParams(filters);
+        if (entryPointId) params.set('tab', entryPointId);
+        const query = params.toString();
+        return `${detailLink({ ref: encodeURIComponent(name) })}${
+          query ? `?${query}` : ''
+        }`;
+      },
+    }),
+    [detailLink],
+  );
+  const nativeTabs = useNativeCatalogTabs(catalogContext);
+  // No native contribution provider in the legacy app: retain its Images panel.
+  const contributedTabs = nativeTabs ?? [
+    {
+      id: 'automation-content.discovery.images-tab',
+      label: 'Execution environments',
+      component: ImagesTabContent,
+    },
+  ];
+  const tabs = [
+    ...contributedTabs.map(tab => ({
+      ...tab,
+      id:
+        tab.id === 'automation-content.discovery.images-tab'
+          ? 'images'
+          : tab.id,
+    })),
+    {
+      id: 'catalog',
+      label: 'Definition files',
+      component: DefinitionFilesCatalogPage,
+    },
+    { id: 'create', label: 'Create', component: CreateContent },
+  ];
+  const requestedTab = searchParams.get('catalogTab');
+  const selectedTab =
+    view === 'images' &&
+    requestedTab &&
+    tabs.some(tab => tab.id === requestedTab)
+      ? requestedTab
+      : view;
   const { notifications, removeNotification } = useNotifications();
   const { isSuperuser } = useIsSuperuser();
   const [syncDialogOpen, setSyncDialogOpen] = useState(false);
@@ -81,29 +145,35 @@ function EETabs({ view }: { view: EECatalogView }): ReactElement {
             status={syncStatus}
           />
           <Tabs
-            selectedKey={view}
-            onSelectionChange={key => navigate(`${eeBase}/${key}`)}
+            selectedKey={selectedTab}
+            onSelectionChange={key => {
+              if (key === 'images' || key === 'catalog' || key === 'create') {
+                navigate(`${eeBase}/${key}`);
+              } else {
+                navigate(
+                  `${eeBase}/images?${new URLSearchParams({
+                    catalogTab: String(key),
+                  })}`,
+                );
+              }
+            }}
           >
             <TabList aria-label="Execution environment catalogs">
-              <Tab id="images">Execution environments</Tab>
-              <Tab id="catalog">Definition files</Tab>
-              <Tab id="create">Create</Tab>
+              {tabs.map(tab => (
+                <Tab key={tab.id} id={tab.id}>
+                  {tab.label}
+                </Tab>
+              ))}
             </TabList>
-            <TabPanel id="images">
-              {view === 'images' && (
-                <ImagesCatalogPage
-                  key={syncVersion}
-                  showHeader={false}
-                  wrapInContainer={false}
-                />
-              )}
-            </TabPanel>
-            <TabPanel id="catalog">
-              {view === 'catalog' && <DefinitionFilesCatalogPage />}
-            </TabPanel>
-            <TabPanel id="create">
-              {view === 'create' && <CreateContent />}
-            </TabPanel>
+            {tabs.map(tab => (
+              <TabPanel key={tab.id} id={tab.id}>
+                {selectedTab === tab.id && (
+                  <Suspense fallback={null}>
+                    <tab.component key={syncVersion} />
+                  </Suspense>
+                )}
+              </TabPanel>
+            ))}
           </Tabs>
           <ImageSyncDialog
             open={syncDialogOpen}

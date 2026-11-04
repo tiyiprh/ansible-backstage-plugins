@@ -31,6 +31,7 @@
   "dependencies": {
     "@ansible/automation-content-common": "workspace:^",
     "@ansible/content-model": "workspace:^",
+    "@ansible/portal-extension-host": "workspace:^",
     "@ansible/portal-plugin-sdk": "workspace:^",
     "@backstage/catalog-model": "1.10.0",
     "@backstage/core-compat-api": "0.5.14",
@@ -50,6 +51,7 @@
     "react-use": "^17.2.4"
   },
   "peerDependencies": {
+    "@ansible/portal-extension-api": "workspace:^",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.30.5"
