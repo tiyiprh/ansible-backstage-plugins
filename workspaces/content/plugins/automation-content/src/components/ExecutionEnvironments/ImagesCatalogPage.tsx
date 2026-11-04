@@ -29,6 +29,11 @@ import {
 import StarIcon from '@material-ui/icons/Star';
 import StarBorderIcon from '@material-ui/icons/StarBorder';
 import MoreVertIcon from '@material-ui/icons/MoreVert';
+import CheckCircleOutlineIcon from '@material-ui/icons/CheckCircleOutline';
+import ErrorOutlineIcon from '@material-ui/icons/ErrorOutline';
+import InfoOutlinedIcon from '@material-ui/icons/InfoOutlined';
+import SyncIcon from '@material-ui/icons/Sync';
+import WarningIcon from '@material-ui/icons/Warning';
 import {
   automationContentApiRef,
   ContentApiError,
@@ -248,9 +253,28 @@ export function ImagesCatalogPage({
           row.lastReconciledAt,
           row.lastReconcileOk,
         );
+        let statusIcon: ReactElement;
+        if (status === 'Available') {
+          statusIcon = <CheckCircleOutlineIcon aria-hidden="true" />;
+        } else if (status === 'Syncing') {
+          statusIcon = <SyncIcon aria-hidden="true" />;
+        } else if (status === 'Stale') {
+          statusIcon = <WarningIcon aria-hidden="true" />;
+        } else if (status === 'Failed') {
+          statusIcon = <ErrorOutlineIcon aria-hidden="true" />;
+        } else {
+          statusIcon = <InfoOutlinedIcon aria-hidden="true" />;
+        }
         return (
           <Cell>
-            <StatusBadge tone={syncStatusTone(status)}>{status}</StatusBadge>
+            <StatusBadge
+              tone={syncStatusTone(status)}
+              size="small"
+              variant="outline"
+              icon={statusIcon}
+            >
+              {status}
+            </StatusBadge>
           </Cell>
         );
       },
