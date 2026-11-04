@@ -81,7 +81,7 @@ Image details follow the selected-image branch in Tina's
 | Tab                | Content                                                                                                                                                                                                                                                                  |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Overview           | Compact metadata list with source/status labels, registry, digest, tags, pull reference with a standalone copy control, classification, available inventory metadata, and last synchronization time. The image menu does not contain a duplicate copy action.            |
-| Collections        | `getContents(ref)` — columns Collection, Version, Status, Publisher, Signing, Source, Contents. Content counts form one summary, not separate count columns. Unavailable status/publisher/signing/source values say Not reported; never infer certification or signing.  |
+| Collections        | `getContents(ref)` — columns Collection, Version, Status, Publisher, Signing, Source, Contents. Content counts form one summary, not separate count columns. Missing metadata uses `—`; never infer certification or signing. `N/A` is reserved for inapplicable values. |
 | Item documentation | `getContentItem(fqcn, inArtifact)` — description, notes, options tree, examples, returns. This must preserve the old `ContentItemView` capability (ansible-doc style rendering), including the `variants` fallback behaviour in `AutomationContentClient.getContentItem` |
 
 Overview and Collections are the only image-details tabs. Collection-level
@@ -89,6 +89,11 @@ content/documentation views and existing direct documentation links remain
 supported. Contents that are unknown or partial must be explained, but the
 routine raw `complete inventory · build-time-manifest` readout is not part of
 the reviewed design.
+
+Image Sync waits for the registry reconciliation response, distinguishes a
+completed result from a failed result, and refreshes both image metadata and
+the separately fetched collection contents. A failed reconciliation may retain
+previously indexed contents; the UI reports that rather than claiming success.
 
 Readme-from-git, links cards, and resources cards remain
 **deferred** (no git readme exists for registry artifacts). Build/edit
@@ -101,6 +106,15 @@ work. The production image API/provider does not yet expose the image-to-
 definition association. Use an explicit catalog-entity relationship when that
 backend connection is implemented; do not infer one from image or registry
 names. The definition page must not be confused with image details.
+
+Definition details prefer inline README and Builder definition annotations.
+When those are absent, they read source files through the existing catalog
+backend endpoint, using the entity's source location and SCM-provider
+annotations. GitLab project namespaces may contain multiple groups. This
+fallback requires the endpoint's existing Ansible-view and catalog-read
+permissions, in addition to the content page's view permission; it does not
+grant new access. Denied access, missing files, integration-authentication
+failures, and unavailable services have distinct messages and a retry action.
 
 **Scope decision (2026-10-29):** EE definition workflows are retained in
 this plugin. Tina's prototype is the authoritative design. A different
@@ -125,6 +139,11 @@ Tina's `CollectionsListPage` / `CollectionsCatalogPage` layout, artifact data:
 | Provided-by        | `providedBy[]` — the EEs shipping it; links to EE details                                                                                             |
 | Search             | `listCollections(query)` server-side where supported, plus client-side grouping                                                                       |
 | Row action         | navigate to collection details                                                                                                                        |
+
+The Personal and Company filter groups retain Favorites and All as separate
+options. Favorites uses matching catalog entities and stays selected while
+search metadata loads or fails; it must not silently switch to All or display
+unstarred results. Metadata failures use the existing error/retry state.
 
 ### Collection details (`/content/collections/…`)
 
@@ -155,8 +174,8 @@ complete; update the PR body only after an authorized push.
 | ---------------------------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Use in Controller            | Dialog submits through the real scaffolder API.                                                       | The referenced `template:default/ee-use-in-controller` template is absent. Supply and integrate it; a rendered dialog is not a working Controller workflow.                                  |
 | Definition-file relationship | Source presentation exists; porting Tina's definition detail page and navigation is approved UI work. | The image API/provider does not identify the definition entity that produced an image. Establish that association explicitly; test records are not proof that real image relationships work. |
-| Collection metadata          | Columns for Status, Publisher, Signing, and Source render Not reported when absent.                   | Expose actual reported values through the data contract. Do not synthesize certification, publishers, signatures, or original collection sources from namespaces or image registries.        |
-| Signing evidence             | Image signing is Unknown; missing collection signing is Not reported.                                 | Confirm which evidence can be retrieved and expose it under an agreed contract. A signature does not imply a safety review or certification.                                                 |
+| Collection metadata          | Columns for Status, Publisher, Signing, and Source render `—` when absent.                            | Expose actual reported values through the data contract. Do not synthesize certification, publishers, signatures, or original collection sources from namespaces or image registries.        |
+| Signing evidence             | Image signing is Unknown; missing collection signing uses `—`.                                        | Confirm which evidence can be retrieved and expose it under an agreed contract. A signature does not imply a safety review or certification.                                                 |
 | Favorites                    | Current UI reuses Backstage catalog stars for linked entities.                                        | Confirm whether that persistence meets the feature requirements; a separate artifact-favorites backend has not been implemented by adding the visible star.                                  |
 | Sync status                  | Result/age-based labels are displayed.                                                                | If Syncing is intended to mean an active operation, provide actual operation state. Missing reconciliation history alone does not establish that a job is running.                           |
 

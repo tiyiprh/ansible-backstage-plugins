@@ -59,29 +59,47 @@ const DEFINITION_FILE_QUERY = {
   },
 } as const;
 
+type CatalogFilterValues = Record<
+  string,
+  string | symbol | (string | symbol)[]
+>;
+
+type EntityPredicate = {
+  kind: string;
+  'metadata.namespace': string;
+  'metadata.name': string;
+};
+
 function isDefinitionFileEntity(entity: Entity): boolean {
   return entity.metadata.annotations?.['ansible.com/digest'] === undefined;
 }
 
 function catalogFilterFromEntityFilters(
   filters: DefaultEntityFilters,
-): Record<string, string | symbol | (string | symbol)[]> {
-  return Object.values(filters).reduce<
-    Record<string, string | symbol | (string | symbol)[]>
-  >((combined, filter) => {
-    if (
-      !filter ||
-      (filter instanceof EntityUserFilter && filter.value === 'starred')
-    ) {
+): CatalogFilterValues {
+  return Object.values(filters).reduce<CatalogFilterValues>(
+    (combined, filter) => {
+      if (
+        !filter ||
+        (filter instanceof EntityUserFilter && filter.value === 'starred')
+      ) {
+        return combined;
+      }
+      if (
+        typeof filter === 'object' &&
+        filter !== null &&
+        'getCatalogFilters' in filter &&
+        typeof filter.getCatalogFilters === 'function'
+      ) {
+        return Object.assign(combined, filter.getCatalogFilters());
+      }
       return combined;
-    }
-    return Object.assign(combined, filter.getCatalogFilters?.() ?? {});
-  }, {});
+    },
+    {},
+  );
 }
 
-function starredEntityPredicates(
-  refs: string[],
-): Array<Record<string, string>> {
+function starredEntityPredicates(refs: string[]): EntityPredicate[] {
   return refs.flatMap(ref => {
     try {
       const parsed = parseEntityRef(ref);
@@ -207,13 +225,19 @@ export function EEListPage({
       .then(response => {
         if (cancelled || requestVersion !== requestVersionRef.current) return;
         setEntities(
-          response.items
-            .filter(isDefinitionFileEntity)
-            .filter(entity =>
-              Object.values(filters).every(
-                filter => !filter?.filterEntity || filter.filterEntity(entity),
-              ),
-            ),
+          response.items.filter(isDefinitionFileEntity).filter(entity =>
+            Object.values(filters).every(filter => {
+              if (
+                typeof filter !== 'object' ||
+                filter === null ||
+                !('filterEntity' in filter) ||
+                typeof filter.filterEntity !== 'function'
+              ) {
+                return true;
+              }
+              return filter.filterEntity(entity);
+            }),
+          ),
         );
         setTotalItems(response.totalItems);
       })

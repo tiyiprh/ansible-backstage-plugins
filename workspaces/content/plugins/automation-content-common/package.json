@@ -42,7 +42,7 @@
     ".": "./src/index.ts",
     "./permissions": "./src/permissions.ts",
     "./url": "./src/url.ts",
-    "./src/testing/tlsCertificates": "./src/testing/tlsCertificates.ts",
+    "./tlsCertificates": "./src/testing/tlsCertificates.ts",
     "./package.json": "./package.json"
   }
 }

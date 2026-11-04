@@ -62,25 +62,39 @@ const networkingSeed = yaml.load(
   ),
 ) as Entity;
 
+function hasDigestExclusion(query: unknown): boolean {
+  if (typeof query !== 'object' || query === null || !('$not' in query)) {
+    return false;
+  }
+  const notPredicate = query.$not;
+  if (
+    typeof notPredicate !== 'object' ||
+    notPredicate === null ||
+    !('metadata.annotations.ansible.com/digest' in notPredicate)
+  ) {
+    return false;
+  }
+  const digestPredicate =
+    notPredicate['metadata.annotations.ansible.com/digest'];
+  return (
+    typeof digestPredicate === 'object' &&
+    digestPredicate !== null &&
+    '$exists' in digestPredicate &&
+    digestPredicate.$exists === true
+  );
+}
+
 function renderPage(
   getEntities: () => Promise<{ items: Entity[] }> = async () => ({
     items: [definition],
   }),
 ) {
   const queryEntities = jest.fn(
-    async (request: { query?: unknown; limit?: number; offset?: number }) => {
+    async (
+      request: { query?: unknown; limit?: number; offset?: number } = {},
+    ) => {
       const response = await getEntities();
-      const hasDigestExclusion = Boolean(
-        request.query &&
-          typeof request.query === 'object' &&
-          '$not' in request.query &&
-          (
-            request.query as {
-              $not?: Record<string, { $exists?: boolean }>;
-            }
-          ).$not?.['metadata.annotations.ansible.com/digest']?.$exists === true,
-      );
-      const filteredItems = hasDigestExclusion
+      const filteredItems = hasDigestExclusion(request.query)
         ? response.items.filter(
             entity =>
               entity.metadata.annotations?.['ansible.com/digest'] === undefined,
@@ -119,7 +133,17 @@ function renderPage(
         [scmAuthApiRef, { getCredentials: jest.fn() }],
         [configApiRef, mockApis.config()],
         [discoveryApiRef, mockApis.discovery()],
-        [fetchApiRef, { fetch: jest.fn() }],
+        [
+          fetchApiRef,
+          {
+            fetch: jest.fn(
+              async (
+                _input: RequestInfo | URL,
+                _init?: RequestInit,
+              ): Promise<Response> => new Response('', { status: 404 }),
+            ),
+          },
+        ],
         [identityApiRef, mockApis.identity()],
       ]}
     >

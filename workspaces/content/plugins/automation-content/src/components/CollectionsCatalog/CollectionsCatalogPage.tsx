@@ -45,6 +45,7 @@ const NO_REGISTRIES: Registry[] = [];
 interface CatalogCollectionLookup {
   entities: Entity[];
   complete: boolean;
+  signature: string;
 }
 
 interface CollectionCardModel {
@@ -124,9 +125,11 @@ export function CollectionsCatalogPage(): ReactElement {
 
   const catalogCollections =
     useAsyncRetry(async (): Promise<CatalogCollectionLookup> => {
-      if (!identities.length) return { entities: [], complete: true };
+      if (!identities.length) {
+        return { entities: [], complete: true, signature: identitySignature };
+      }
       if (identities.length > MAX_COLLECTION_IDENTITIES) {
-        return { entities: [], complete: false };
+        return { entities: [], complete: false, signature: identitySignature };
       }
 
       const fqcnValues = Array.from(new Set(identities.map(item => item.fqcn)));
@@ -167,6 +170,7 @@ export function CollectionsCatalogPage(): ReactElement {
       });
       return {
         entities,
+        signature: identitySignature,
         complete:
           !response.pageInfo.nextCursor &&
           response.totalItems <= response.items.length,
@@ -178,7 +182,8 @@ export function CollectionsCatalogPage(): ReactElement {
   const catalogMetadataComplete =
     !catalogCollections.loading &&
     !catalogCollections.error &&
-    catalogCollections.value?.complete === true;
+    catalogCollections.value?.complete === true &&
+    catalogCollections.value.signature === identitySignature;
   const entitiesByIdentity = useMemo(() => {
     const result = new Map<string, Entity[]>();
     for (const entity of catalogEntities) {
@@ -223,10 +228,10 @@ export function CollectionsCatalogPage(): ReactElement {
     () => [
       { id: 'all', label: 'All sources' },
       ...(availableSourceTypes.has('external-registry')
-        ? [{ id: 'external-registry', label: 'External registry' }]
+        ? [{ id: 'external-registry' as const, label: 'External registry' }]
         : []),
       ...(availableSourceTypes.has('unknown')
-        ? [{ id: 'unknown', label: 'Unknown' }]
+        ? [{ id: 'unknown' as const, label: 'Unknown' }]
         : []),
     ],
     [availableSourceTypes],
@@ -239,9 +244,16 @@ export function CollectionsCatalogPage(): ReactElement {
     catalogMetadataComplete && catalogEntities.length > 0;
   const tagsAvailable = catalogMetadataComplete && catalogTags.length > 0;
 
-  useEffect(() => {
-    if (!starredAvailable && scope === 'starred') setScope('all');
-  }, [scope, starredAvailable]);
+  const starredMetadataPending =
+    scope === 'starred' &&
+    !catalogCollections.error &&
+    (catalogCollections.loading ||
+      catalogCollections.value?.signature !== identitySignature);
+  const resultsLoading = collectionResult.loading || starredMetadataPending;
+  const resultsReady =
+    !resultsLoading &&
+    !collectionResult.error &&
+    (scope !== 'starred' || catalogMetadataComplete);
   useEffect(() => {
     if (
       !sourceTypeOptions.some(option => option.id === sourceTypeFilter) &&
@@ -300,10 +312,7 @@ export function CollectionsCatalogPage(): ReactElement {
   let emptyTitle = 'No collections found';
   let emptyDescription =
     'Adjust your search or filters, or check back after registries are reconciled.';
-  const resultsCount =
-    !collectionResult.loading && !collectionResult.error
-      ? ` (${filteredCards.length})`
-      : '';
+  const resultsCount = resultsReady ? ` (${filteredCards.length})` : '';
   if (scope === 'starred') {
     emptyTitle = 'No starred collections';
     emptyDescription =
@@ -416,7 +425,10 @@ export function CollectionsCatalogPage(): ReactElement {
               </Button>
             </div>
           )}
-          {catalogCollections.error && (
+          {(catalogCollections.error ||
+            (scope === 'starred' &&
+              !resultsLoading &&
+              !catalogMetadataComplete)) && (
             <div className={styles.serviceError} role="alert">
               Unable to load matching collection catalog details.{' '}
               <Button size="small" onPress={catalogCollections.retry}>
@@ -478,7 +490,7 @@ export function CollectionsCatalogPage(): ReactElement {
                   <Button onPress={collectionResult.retry}>Retry</Button>
                 </div>
               )}
-              {collectionResult.loading && (
+              {resultsLoading && (
                 <div
                   className={styles.cardGrid}
                   aria-label="Loading collections"
@@ -488,15 +500,10 @@ export function CollectionsCatalogPage(): ReactElement {
                   ))}
                 </div>
               )}
-              {!collectionResult.loading &&
-                !collectionResult.error &&
-                filteredCards.length === 0 && (
-                  <EmptyState
-                    title={emptyTitle}
-                    description={emptyDescription}
-                  />
-                )}
-              {!collectionResult.loading && !collectionResult.error && (
+              {resultsReady && filteredCards.length === 0 && (
+                <EmptyState title={emptyTitle} description={emptyDescription} />
+              )}
+              {resultsReady && (
                 <>
                   <div className={styles.cardGrid}>
                     {visibleCards.map(({ collection }) => {

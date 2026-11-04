@@ -34,7 +34,6 @@ import StarBorderIcon from '@material-ui/icons/StarBorder';
 import {
   NotificationProvider,
   NotificationStack,
-  ScmIntegrationAuthError,
   useNotifications,
 } from '@ansible/portal-plugin-sdk';
 import { UnregisterEntityDialog } from '../UnregisterEntityDialog';
@@ -54,6 +53,8 @@ import {
   fetchGitFileContentFromBackend,
   getGitFileLocation,
   sourceFilePath,
+  type GitFileFailureReason,
+  type GitFileOutcome,
 } from './definitionFileDetails/gitFileReader';
 import styles from './definitionFileDetails/definitionFileDetails.module.css';
 
@@ -76,6 +77,19 @@ function downloadExperience(entity: Entity): boolean {
       .toLowerCase()
       .trim() === 'true'
   );
+}
+
+interface SourceFileResults {
+  entityRef: string;
+  entity: Entity;
+  readme?: GitFileOutcome;
+  definition?: GitFileOutcome;
+}
+
+function failureReason(
+  outcome: GitFileOutcome | undefined,
+): GitFileFailureReason | undefined {
+  return outcome && !outcome.ok ? outcome.reason : undefined;
 }
 
 function DefinitionFileDetailsContent(): ReactElement {
@@ -139,7 +153,9 @@ function DefinitionFileDetailsContent(): ReactElement {
     () => (entity ? getGitFileLocation(entity) : undefined),
     [entity],
   );
-  const sourceFilesRequest = useAsyncRetry(async () => {
+  const sourceFilesRequest = useAsyncRetry(async (): Promise<
+    SourceFileResults | undefined
+  > => {
     if (!entity) return undefined;
     const currentEntityRef = entityRef;
     if (
@@ -149,9 +165,7 @@ function DefinitionFileDetailsContent(): ReactElement {
     ) {
       return {
         entityRef: currentEntityRef,
-        readme: undefined,
-        definition: undefined,
-        integrationAuthError: false,
+        entity,
       };
     }
 
@@ -176,11 +190,9 @@ function DefinitionFileDetailsContent(): ReactElement {
 
     return {
       entityRef: currentEntityRef,
-      readme: readmeOutcome?.ok ? readmeOutcome.data : undefined,
-      definition: definitionOutcome?.ok ? definitionOutcome.data : undefined,
-      integrationAuthError:
-        readmeOutcome?.reason === 'integration_auth' ||
-        definitionOutcome?.reason === 'integration_auth',
+      entity,
+      ...(readmeOutcome ? { readme: readmeOutcome } : {}),
+      ...(definitionOutcome ? { definition: definitionOutcome } : {}),
     };
   }, [
     discoveryApi,
@@ -192,18 +204,28 @@ function DefinitionFileDetailsContent(): ReactElement {
     inlineReadme,
     validDefinitionEntity,
   ]);
+  const candidateSourceFiles = sourceFilesRequest.value;
   const currentSourceFiles =
-    sourceFilesRequest.value?.entityRef === entityRef
-      ? sourceFilesRequest.value
+    candidateSourceFiles &&
+    candidateSourceFiles.entityRef === entityRef &&
+    candidateSourceFiles.entity === entity
+      ? candidateSourceFiles
       : undefined;
-  const readme = inlineReadme ?? currentSourceFiles?.readme;
-  const definition = inlineDefinition ?? currentSourceFiles?.definition;
+  const readmeOutcome = inlineReadme ? undefined : currentSourceFiles?.readme;
+  const definitionOutcome = inlineDefinition
+    ? undefined
+    : currentSourceFiles?.definition;
+  const readme =
+    inlineReadme ?? (readmeOutcome?.ok ? readmeOutcome.data : undefined);
+  const definition =
+    inlineDefinition ??
+    (definitionOutcome?.ok ? definitionOutcome.data : undefined);
+  const readmeFailure = failureReason(readmeOutcome);
+  const definitionFailure = failureReason(definitionOutcome);
   const parsedDefinition = useMemo(
     () => parseEEDefinition(definition),
     [definition],
   );
-  const integrationAuthError =
-    currentSourceFiles?.integrationAuthError ?? false;
   const downloadArchive = useCallback(() => {
     if (entity) downloadEntityAsTarArchive(entity);
   }, [entity]);
@@ -323,11 +345,7 @@ function DefinitionFileDetailsContent(): ReactElement {
         {sourceFilesRequest.loading && (
           <Text role="status">Loading source files…</Text>
         )}
-        {integrationAuthError && (
-          <ScmIntegrationAuthError resourceLabel="execution environment" />
-        )}
-        {!integrationAuthError &&
-          !entityRequest.loading &&
+        {!entityRequest.loading &&
           !entityRequest.error &&
           validDefinitionEntity &&
           entity && (
@@ -341,6 +359,8 @@ function DefinitionFileDetailsContent(): ReactElement {
                   ownerName={ownerRequest.value ?? ownerRef ?? '—'}
                   parsedDefinition={parsedDefinition}
                   hasDefinition={Boolean(definition?.trim())}
+                  readmeFailure={readmeFailure}
+                  definitionFailure={definitionFailure}
                   sourceLocationUrl={sourceLocation}
                   editDefinitionUrl={isDownloadExperience ? undefined : editUrl}
                   readme={readme}
@@ -349,6 +369,7 @@ function DefinitionFileDetailsContent(): ReactElement {
                   }
                   isDownloadExperience={isDownloadExperience}
                   onRefresh={refreshDetails}
+                  onRetrySourceFiles={sourceFilesRequest.retry}
                   onEditDefinition={() => openExternal(editUrl)}
                   onDownloadArchive={downloadArchive}
                 />

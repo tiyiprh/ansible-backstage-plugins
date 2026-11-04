@@ -4,6 +4,17 @@ import { TestApiProvider } from '@backstage/test-utils';
 import { scaffolderApiRef } from '@backstage/plugin-scaffolder-react';
 import { UseInControllerDialog } from './UseInControllerDialog';
 
+beforeAll(() => {
+  // React Aria escapes the CSP nonce meta selector; jsdom lacks CSS.escape.
+  // Match the browser API shim already used by the other EE component tests.
+  const cssApi = globalThis.CSS ?? ({} as typeof CSS);
+  cssApi.escape ??= value => value.replace(/[^a-zA-Z0-9_-]/g, '\\$&');
+  Object.defineProperty(globalThis, 'CSS', {
+    configurable: true,
+    value: cssApi,
+  });
+});
+
 it('prefills image details and reports the unavailable template honestly', async () => {
   const scaffold = jest.fn().mockRejectedValue(new Error('template not found'));
   render(

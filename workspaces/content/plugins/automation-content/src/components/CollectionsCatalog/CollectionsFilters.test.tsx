@@ -36,8 +36,9 @@ it('keeps the vertical Tina scope and omits diagnostic copy for unavailable face
   expect(screen.queryByRole('button', { name: /Personal/ })).toBeNull();
   expect(screen.queryByRole('button', { name: /Company/ })).toBeNull();
   const scopeGroup = screen.getByRole('group', { name: 'Collection scope' });
-  expect(scopeGroup.textContent?.indexOf('Personal')).toBeLessThan(
-    scopeGroup.textContent?.indexOf('Company'),
+  const scopeText = scopeGroup.textContent ?? '';
+  expect(scopeText.indexOf('Personal')).toBeLessThan(
+    scopeText.indexOf('Company'),
   );
   expect(
     screen.getByRole('checkbox', { name: 'Show latest version only' }),

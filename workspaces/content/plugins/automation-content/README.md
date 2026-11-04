@@ -14,6 +14,7 @@ All routes live under `/content`:
 | `/content`                              | Redirect to the images catalog                                 |
 | `/content/ee`                           | Images catalog with Images, Definition files, and Create tabs  |
 | `/content/ee/:ref`                      | EE details: tags, contents, provided collections and plugins   |
+| `/content/ee/catalog/:namespace/:name`  | Definition-file details: README, Builder definition and source |
 | `/content/collections`                  | Collections catalog grouped by FQCN with latest-version badges |
 | `/content/collections/:namespace/:name` | Collection details: versions, providing environments, contents |
 
@@ -28,17 +29,24 @@ identical URLs.
 
 ## Requirements
 
-The frontend is a discovery surface only — it holds no credentials and talks
-exclusively to the portal backend through `automationContentApiRef`:
+Registry discovery uses the portal backend through `automationContentApiRef`;
+the browser does not contact registries directly:
 
 - `@ansible/plugin-automation-content-backend` — serves the content API the
   pages read (inventory, enumeration, item docs, registry health, sync).
 - `@ansible/plugin-catalog-backend-module-automation-content` — ingests
-  registry content into the catalog; the pages use catalog entities only for
-  favorites/stars.
+  registry content into the catalog. The pages use catalog entities for
+  favorites/stars and matching collection metadata, not inventory truth.
+
+Definition files also use catalog entities for their definitions, ownership,
+and source links. Missing inline README/definition content is fetched through
+the existing catalog backend SCM endpoint. That endpoint retains its existing
+Ansible-view and catalog-read requirements; content-view access alone does not
+grant source-file access.
 
 The Definition files and Create tabs reuse the Portal SDK's EE authoring
-components. SCM token handling remains in `@ansible/portal-scaffolder`.
+components. The build flow forwards the requesting user's SCM token through
+the established backend flow without persisting it.
 
 ## Configuration
 
@@ -61,8 +69,8 @@ username/password, TLS verification) for registry connections.
 
 ## Behavior notes
 
-- **Images catalog scope:** the Images tab shows the registry image inventory,
-  including images not classified as execution environments. Classification
+- **Images catalog scope:** the default view shows classified execution
+  environments; the all-images toggle includes unclassified images. Classification
   requires builder labels or manifest referrers that not every legitimate EE
   carries.
 - **Inventory fidelity:** images whose contents could not be enumerated show a
@@ -71,14 +79,20 @@ username/password, TLS verification) for registry connections.
 - **View gating:** `ansible.content.view` gates the content views and API reads.
 - **Sync gating:** the images page's header sync button is rendered only for
   superusers, and the backend rejects sync requests from non-superusers with 403.
+- **Sync results:** image-level Sync reports completed or failed reconciliation
+  and refreshes both metadata and collection contents. Failed reconciliation
+  can retain the previously indexed inventory.
+- **Missing metadata:** collection status, publisher, signing, and source use
+  `—` when absent. They are not inferred from names or registries.
 
 ## Local development
 
-Run `yarn start` from the repository root and open
-[/content/ee](http://localhost:3000/content/ee). For a
-self-contained registry, `scripts/dev-up.sh --registry` (repository root)
-starts a local OCI registry seeded with demo images and writes the matching
-`app-config.local.yaml`.
+Run `./install-deps` from the repository root, configure a reachable registry
+in the gitignored `app-config.local.yaml`, then run `yarn start` and open
+[/content/ee](http://localhost:3000/content/ee). The backend serves on port 7007.
+Use the registry's actual HTTP/HTTPS scheme. Verified HTTPS is the default;
+use `caFile` to trust a local CA. `insecure: true` permits plain HTTP or skips
+certificate verification and is for local development only.
 
 For sign-in without external identity providers, enable the guest provider in
 `app-config.local.yaml`:
@@ -88,3 +102,18 @@ auth:
   providers:
     guest: {}
 ```
+
+Synthetic status/source variants are optional local test input. They require
+both development mode and `automationContent.development.demoImages: true`.
+`automationContent.development.sourceRef` can reuse a real local image's
+contents. The adapter is disabled by default and in production, and blocks
+synthetic mutation requests.
+
+The local definition fixture is
+`dev/fixtures/networking-ee.catalog.yaml`. It does not build an image or
+establish a production image-to-definition association.
+
+See [the page data contract](../../docs/page-data-contract.md#implementation-follow-ups-for-the-pull-request)
+for outstanding Controller-template, definition-association, metadata, and
+signing integrations. Visible controls do not establish that those integrations
+are complete.

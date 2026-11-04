@@ -16,6 +16,7 @@ const props: DefinitionFileOverviewProps = {
   isRefreshing: false,
   isDownloadExperience: false,
   onRefresh: jest.fn(),
+  onRetrySourceFiles: jest.fn(),
   onEditDefinition: jest.fn(),
   onDownloadArchive: jest.fn(),
 };

@@ -330,9 +330,18 @@ export function EEDetailsPage(): ReactElement {
     setSyncing(true);
     setSyncStatus('');
     try {
-      await api.syncRegistry(value.registry);
-      setSyncStatus('Sync started.');
+      const result = await api.syncRegistry(value.registry);
+      if (result.status === 'completed') {
+        setSyncStatus('Sync completed.');
+      } else if (result.retainedPrevious) {
+        setSyncStatus(
+          'Sync failed. Previously indexed content is still shown.',
+        );
+      } else {
+        setSyncStatus('Unable to sync this registry.');
+      }
       image.retry();
+      contents.retry();
     } catch (error) {
       setSyncStatus(
         error instanceof ContentApiError && error.status === 403

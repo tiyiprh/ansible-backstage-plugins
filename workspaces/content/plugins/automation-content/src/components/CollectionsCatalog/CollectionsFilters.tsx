@@ -91,11 +91,6 @@ export function CollectionsFilters({
           ? `Favorites, ${starredCount}`
           : 'Favorites, unavailable for current catalog results'
       }
-      title={
-        starredAvailable
-          ? undefined
-          : 'Requires a matching collection catalog entry'
-      }
       onPress={() => onScopeChange('starred')}
     >
       <Flex

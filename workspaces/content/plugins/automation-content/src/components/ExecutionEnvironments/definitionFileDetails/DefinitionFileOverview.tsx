@@ -18,6 +18,7 @@ import EditIcon from '@material-ui/icons/Edit';
 import GetAppIcon from '@material-ui/icons/GetApp';
 import OpenInNewIcon from '@material-ui/icons/OpenInNew';
 import type { ParsedEEDefinition } from '../../../utils/eeDefinitionUtils';
+import type { GitFileFailureReason } from './gitFileReader';
 import styles from './definitionFileDetails.module.css';
 
 export interface DefinitionFileOverviewProps {
@@ -25,12 +26,15 @@ export interface DefinitionFileOverviewProps {
   ownerName: string;
   parsedDefinition: ParsedEEDefinition | null;
   hasDefinition: boolean;
+  readmeFailure?: GitFileFailureReason;
+  definitionFailure?: GitFileFailureReason;
   sourceLocationUrl?: string;
   editDefinitionUrl?: string;
   readme?: string;
   isRefreshing: boolean;
   isDownloadExperience: boolean;
   onRefresh: () => void;
+  onRetrySourceFiles: () => void;
   onEditDefinition: () => void;
   onDownloadArchive: () => void;
 }
@@ -84,6 +88,19 @@ function OverviewCard({
   );
 }
 
+type AboutCardProps = Pick<
+  DefinitionFileOverviewProps,
+  | 'entity'
+  | 'ownerName'
+  | 'parsedDefinition'
+  | 'sourceLocationUrl'
+  | 'editDefinitionUrl'
+  | 'isRefreshing'
+  | 'isDownloadExperience'
+  | 'onRefresh'
+  | 'onEditDefinition'
+>;
+
 function AboutCard({
   entity,
   ownerName,
@@ -94,7 +111,7 @@ function AboutCard({
   isDownloadExperience,
   onRefresh,
   onEditDefinition,
-}: DefinitionFileOverviewProps): ReactElement {
+}: AboutCardProps): ReactElement {
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const description =
     entity.metadata.description?.trim() ||
@@ -207,6 +224,38 @@ function DefinitionField({
   );
 }
 
+function SourceFileFailure({
+  fileLabel,
+  reason,
+  onRetry,
+}: {
+  fileLabel: string;
+  reason: GitFileFailureReason;
+  onRetry: () => void;
+}): ReactElement {
+  const message = {
+    integration_auth:
+      'SCM integration authentication failed. Check the configured GitHub ' +
+      'or GitLab credentials, then retry.',
+    access_denied:
+      `Access to the ${fileLabel} in the source repository was denied. ` +
+      'Check your Ansible content and catalog access, then retry.',
+    not_found: `The ${fileLabel} was not found in the source repository.`,
+    unavailable: 'The source repository is unavailable right now.',
+  }[reason];
+
+  return (
+    <Flex align="center" justify="between" gap="3">
+      <Text role="alert" color="secondary">
+        {message}
+      </Text>
+      <Button variant="tertiary" size="small" onPress={onRetry}>
+        Retry
+      </Button>
+    </Flex>
+  );
+}
+
 function formatCollectionName(name: string): string {
   const masked = name.replace(/\$\{[^}]+\}/g, 'token');
   try {
@@ -269,65 +318,76 @@ function ContentSection({
 function DefinedContentCard({
   parsedDefinition,
   hasDefinition,
+  definitionFailure,
+  onRetrySourceFiles,
 }: {
   parsedDefinition: ParsedEEDefinition | null;
   hasDefinition: boolean;
+  definitionFailure?: GitFileFailureReason;
+  onRetrySourceFiles: () => void;
 }): ReactElement {
   const collections = parsedDefinition?.collections ?? [];
   const pythonPackages = parsedDefinition?.pythonPackages ?? [];
   const systemPackages = parsedDefinition?.systemPackages ?? [];
 
-  return (
-    <OverviewCard title="Defined Content">
-      {!parsedDefinition ? (
+  let content: ReactElement;
+  if (definitionFailure) {
+    content = (
+      <SourceFileFailure
+        fileLabel="definition file"
+        reason={definitionFailure}
+        onRetry={onRetrySourceFiles}
+      />
+    );
+  } else if (!parsedDefinition) {
+    content = (
+      <Text color="secondary">
+        {hasDefinition
+          ? 'Definition file could not be read.'
+          : 'No definition file available.'}
+      </Text>
+    );
+  } else {
+    content = (
+      <Flex direction="column" gap="4">
         <Text color="secondary">
-          {hasDefinition
-            ? 'Definition file could not be read.'
-            : 'No definition file available.'}
+          Shows explicitly added collections, Python requirements, and system
+          packages only.
         </Text>
-      ) : (
-        <Flex direction="column" gap="4">
-          <Text color="secondary">
-            Shows explicitly added collections, Python requirements, and system
-            packages only.
-          </Text>
-          <ContentSection
-            label="Collections"
-            values={collections.map(collection => collection.name)}
-            fileRef={parsedDefinition.collectionsFileRef}
-            emptyCopy="No additional collections declared."
-            formatValue={(_name, index) => {
-              const collection = collections[index];
-              return `${formatCollectionName(
-                collection.name,
-              )}${formatCollectionVersion(
-                collection.version,
-                collection.type,
-              )}`;
-            }}
+        <ContentSection
+          label="Collections"
+          values={collections.map(collection => collection.name)}
+          fileRef={parsedDefinition.collectionsFileRef}
+          emptyCopy="No additional collections declared."
+          formatValue={(_name, index) => {
+            const collection = collections[index];
+            return `${formatCollectionName(
+              collection.name,
+            )}${formatCollectionVersion(collection.version, collection.type)}`;
+          }}
+        />
+        {parsedDefinition.pythonPath && (
+          <DefinitionField
+            label="Python interpreter"
+            value={parsedDefinition.pythonPath}
           />
-          {parsedDefinition.pythonPath && (
-            <DefinitionField
-              label="Python interpreter"
-              value={parsedDefinition.pythonPath}
-            />
-          )}
-          <ContentSection
-            label="Python requirements"
-            values={pythonPackages}
-            fileRef={parsedDefinition.pythonFileRef}
-            emptyCopy="No additional Python requirements declared."
-          />
-          <ContentSection
-            label="System packages"
-            values={systemPackages}
-            fileRef={parsedDefinition.systemFileRef}
-            emptyCopy="No additional system packages declared."
-          />
-        </Flex>
-      )}
-    </OverviewCard>
-  );
+        )}
+        <ContentSection
+          label="Python requirements"
+          values={pythonPackages}
+          fileRef={parsedDefinition.pythonFileRef}
+          emptyCopy="No additional Python requirements declared."
+        />
+        <ContentSection
+          label="System packages"
+          values={systemPackages}
+          fileRef={parsedDefinition.systemFileRef}
+          emptyCopy="No additional system packages declared."
+        />
+      </Flex>
+    );
+  }
+  return <OverviewCard title="Defined Content">{content}</OverviewCard>;
 }
 
 function ResourcesCard(): ReactElement {
@@ -414,22 +474,37 @@ export function DefinitionFileOverview({
   sourceLocationUrl,
   editDefinitionUrl,
   readme,
+  readmeFailure,
+  definitionFailure,
   isRefreshing,
   isDownloadExperience,
   onRefresh,
+  onRetrySourceFiles,
   onEditDefinition,
   onDownloadArchive,
 }: DefinitionFileOverviewProps): ReactElement {
+  let readmeContent: ReactElement;
+  if (readmeFailure) {
+    readmeContent = (
+      <SourceFileFailure
+        fileLabel="README"
+        reason={readmeFailure}
+        onRetry={onRetrySourceFiles}
+      />
+    );
+  } else if (readme?.trim()) {
+    readmeContent = (
+      <div className={styles.readmeScroll}>
+        <MarkdownContent content={readme} />
+      </div>
+    );
+  } else {
+    readmeContent = <Text color="secondary">No README available.</Text>;
+  }
   return (
     <div className={styles.overviewGrid}>
       <OverviewCard title="README" className={styles.readmeCard}>
-        {readme?.trim() ? (
-          <div className={styles.readmeScroll}>
-            <MarkdownContent content={readme} />
-          </div>
-        ) : (
-          <Text color="secondary">No README available.</Text>
-        )}
+        {readmeContent}
       </OverviewCard>
       <aside className={styles.overviewSidebar}>
         <LinksCard
@@ -447,11 +522,12 @@ export function DefinitionFileOverview({
           isDownloadExperience={isDownloadExperience}
           onRefresh={onRefresh}
           onEditDefinition={onEditDefinition}
-          onDownloadArchive={onDownloadArchive}
         />
         <DefinedContentCard
           parsedDefinition={parsedDefinition}
           hasDefinition={hasDefinition}
+          definitionFailure={definitionFailure}
+          onRetrySourceFiles={onRetrySourceFiles}
         />
         <ResourcesCard />
       </aside>

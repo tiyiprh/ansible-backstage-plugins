@@ -11,6 +11,7 @@ import {
   type ArtifactContents,
   type AutomationContentApi,
   type ExecutionEnvironment,
+  type RegistrySyncResult,
 } from '../../api';
 import { createDemoApi } from '../../development/demoApi';
 import { demoImageRef } from '../../development/fixtures';
@@ -596,6 +597,105 @@ it('shows the star toggle and reviewed row actions, including the unavailable co
   expect((await screen.findByRole('alert')).textContent).toContain(
     'Sync access needed for R.',
   );
+});
+
+it.each([
+  ['completed', null],
+  ['failed', 'Sync failed for R. Previously indexed content is still shown.'],
+] as const)(
+  'refreshes catalog rows and reports a resolved %s reconciliation accurately',
+  async (status, expectedAlert) => {
+    let reconciled = false;
+    const { api } = createLiveApi(base);
+    const listExecutionEnvironments = jest.fn(async () =>
+      envelope([
+        {
+          ...base,
+          ...(reconciled
+            ? {
+                lastReconciledAt: new Date().toISOString(),
+                lastReconcileOk: status === 'completed',
+              }
+            : {}),
+        },
+      ]),
+    );
+    const syncRegistry = jest.fn(
+      async (_registry: string): Promise<RegistrySyncResult> => {
+        reconciled = true;
+        return {
+          status,
+          discovered: 1,
+          retainedPrevious: status === 'failed',
+          error:
+            status === 'failed'
+              ? 'https://user:secret@registry.invalid'
+              : undefined,
+        };
+      },
+    );
+    render(
+      <TestApiProvider
+        apis={[
+          [
+            automationContentApiRef,
+            { ...api, listExecutionEnvironments, syncRegistry },
+          ],
+          [catalogApiRef, { getEntities: async () => ({ items: [] }) }],
+        ]}
+      >
+        <MemoryRouter>
+          <ImagesCatalogPage />
+        </MemoryRouter>
+      </TestApiProvider>,
+    );
+    await screen.findByRole('link', { name: 'repo' });
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Actions for repo' }),
+    );
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Sync' }));
+    await waitFor(() =>
+      expect(listExecutionEnvironments).toHaveBeenCalledTimes(2),
+    );
+    expect(
+      await screen.findByText(status === 'failed' ? 'Failed' : 'Available'),
+    ).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'repo' })).toBeTruthy();
+    expect(screen.queryByRole('alert')?.textContent ?? null).toBe(
+      expectedAlert,
+    );
+    expect(syncRegistry).toHaveBeenCalledWith('r');
+    expect(screen.queryByText('Sync started.')).toBeNull();
+    expect(screen.queryByText(/secret/)).toBeNull();
+  },
+);
+
+it('uses safe generic feedback for an HTTP 500 sync failure', async () => {
+  const { api } = createLiveApi(base);
+  api.syncRegistry = async () => {
+    throw new ContentApiError(500, 'https://user:secret@registry.invalid');
+  };
+  render(
+    <TestApiProvider
+      apis={[
+        [automationContentApiRef, api],
+        [catalogApiRef, { getEntities: async () => ({ items: [] }) }],
+      ]}
+    >
+      <MemoryRouter>
+        <ImagesCatalogPage />
+      </MemoryRouter>
+    </TestApiProvider>,
+  );
+  await screen.findByRole('link', { name: 'repo' });
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Actions for repo' }),
+  );
+  await userEvent.click(screen.getByRole('menuitem', { name: 'Sync' }));
+  expect((await screen.findByRole('alert')).textContent).toContain(
+    'Unable to sync R.',
+  );
+  expect(screen.queryByText(/secret/)).toBeNull();
 });
 
 it('labels partial counts and unknown contents without requiring catalog matches', async () => {

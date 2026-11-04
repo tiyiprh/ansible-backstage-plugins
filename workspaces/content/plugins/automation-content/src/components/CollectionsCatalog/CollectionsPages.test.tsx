@@ -1,4 +1,4 @@
-import { fireEvent, screen } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import {
   renderInTestApp,
   TestApiProvider,
@@ -15,6 +15,7 @@ import {
   automationContentApiRef,
   type Collection,
   type ContentItemSummary,
+  type SyncResult,
 } from '../../api';
 import { CollectionsCatalogPage } from './CollectionsCatalogPage';
 import { CollectionDetailsPage } from './CollectionDetailsPage';
@@ -110,11 +111,13 @@ const api = {
       lastReconcileOk: true,
     },
   ]),
-  syncAll: jest.fn(async () => ({
-    status: 'completed' as const,
-    durationMs: 10,
-    registries: [{ registry: 'r', ok: true, discovered: 3 }],
-  })),
+  syncAll: jest.fn(
+    async (): Promise<SyncResult> => ({
+      status: 'completed' as const,
+      durationMs: 10,
+      registries: [{ registry: 'r', ok: true, discovered: 3 }],
+    }),
+  ),
   searchContentItems: jest.fn(
     async (): Promise<{ totalItems: number; items: ContentItemSummary[] }> => ({
       totalItems: 0,
@@ -276,6 +279,98 @@ it('uses exact collection catalog identities for real favorites and tag facets',
   ).toBeTruthy();
   expect(screen.getByText('v1.10.0')).toBeTruthy();
   expect(screen.queryByText('v1.9.0')).toBeNull();
+});
+
+it.each(['success', 'error', 'absence'] as const)(
+  'retains Favorites while search metadata is pending and after %s',
+  async outcome => {
+    const starredApi = new MockStarredEntitiesApi();
+    await starredApi.toggleStarred(
+      'component:default/collection-ee-name_with-dots-1-10-0',
+    );
+    await mount('/', starredApi);
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Favorites, 1' }),
+    );
+    const other = {
+      ...first,
+      namespace: 'other',
+      name: 'unstarred',
+      fqcn: 'other.unstarred',
+    };
+    let resolveMetadata: (
+      result: Awaited<ReturnType<typeof catalogApi.queryEntities>>,
+    ) => void = () => {};
+    let rejectMetadata: (reason: Error) => void = () => {};
+    const pendingMetadata = new Promise<
+      Awaited<ReturnType<typeof catalogApi.queryEntities>>
+    >((resolve, reject) => {
+      resolveMetadata = resolve;
+      rejectMetadata = reject;
+    });
+    api.listCollections.mockResolvedValueOnce([...items, other]);
+    catalogApi.queryEntities.mockReturnValueOnce(pendingMetadata);
+    fireEvent.change(screen.getByRole('searchbox'), {
+      target: { value: 'matches' },
+    });
+    await waitFor(() =>
+      expect(api.listCollections).toHaveBeenLastCalledWith('matches'),
+    );
+    await waitFor(() =>
+      expect(catalogApi.queryEntities).toHaveBeenCalledTimes(2),
+    );
+    expect(
+      screen
+        .getByRole('button', { name: /Favorites/ })
+        .getAttribute('aria-pressed'),
+    ).toBe('true');
+    expect(screen.getByLabelText('Loading collections')).toBeTruthy();
+    expect(screen.queryByText('No starred collections')).toBeNull();
+    expect(screen.queryByRole('link', { name: other.fqcn })).toBeNull();
+    await act(async () => {
+      if (outcome === 'error')
+        rejectMetadata(new Error('metadata unavailable'));
+      else
+        resolveMetadata({
+          items: outcome === 'success' ? catalogEntities : [],
+          totalItems: outcome === 'success' ? catalogEntities.length : 0,
+          pageInfo: {},
+        });
+    });
+    expect(
+      screen
+        .getByRole('button', { name: /Favorites/ })
+        .getAttribute('aria-pressed'),
+    ).toBe('true');
+    expect(screen.queryByRole('link', { name: other.fqcn })).toBeNull();
+    const expectedText = {
+      success: 'Ansible collections (1)',
+      error: /Unable to load matching collection catalog details/,
+      absence: 'No starred collections',
+    }[outcome];
+    expect(await screen.findByText(expectedText)).toBeTruthy();
+  },
+);
+
+it('retains Favorites when a search has no collection results', async () => {
+  const starredApi = new MockStarredEntitiesApi();
+  await starredApi.toggleStarred(
+    'component:default/collection-ee-name_with-dots-1-10-0',
+  );
+  await mount('/', starredApi);
+  fireEvent.click(await screen.findByRole('button', { name: 'Favorites, 1' }));
+  fireEvent.change(screen.getByRole('searchbox'), {
+    target: { value: 'missing' },
+  });
+  await screen.findByText('No starred collections');
+  expect(
+    screen
+      .getByRole('button', { name: /Favorites/ })
+      .getAttribute('aria-pressed'),
+  ).toBe('true');
+  expect(
+    screen.getByRole('button', { name: /All,/ }).getAttribute('aria-pressed'),
+  ).toBe('false');
 });
 
 it('reports successful registry sync from the real sync API', async () => {

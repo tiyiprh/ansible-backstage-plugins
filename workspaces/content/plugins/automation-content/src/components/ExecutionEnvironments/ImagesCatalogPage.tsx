@@ -170,7 +170,16 @@ export function ImagesCatalogPage({
     setSyncingRegistry(registry);
     setSyncError('');
     try {
-      await api.syncRegistry(registry);
+      const result = await api.syncRegistry(registry);
+      if (result.status === 'failed') {
+        setSyncError(
+          result.retainedPrevious
+            ? `Sync failed for ${displayRegistryName(
+                registry,
+              )}. Previously indexed content is still shown.`
+            : `Unable to sync ${displayRegistryName(registry)}.`,
+        );
+      }
       images.retry();
     } catch (error) {
       setSyncError(

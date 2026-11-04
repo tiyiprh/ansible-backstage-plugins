@@ -11,9 +11,15 @@ export interface GitFileLocation {
   subdir: string;
 }
 
+export type GitFileFailureReason =
+  | 'integration_auth'
+  | 'access_denied'
+  | 'not_found'
+  | 'unavailable';
+
 export type GitFileOutcome =
   | { ok: true; data: string }
-  | { ok: false; reason: 'integration_auth' | 'other' };
+  | { ok: false; reason: GitFileFailureReason };
 
 /** Resolve the same source coordinates used by the catalog git-file endpoint. */
 export function getGitFileLocation(
@@ -43,18 +49,45 @@ export function getGitFileLocation(
   const path = url.pathname.split('/').filter(Boolean);
   if (path.length < 2) return undefined;
 
-  const owner = path[0];
-  const repo = path[1];
-  const markerIndex = path.indexOf('tree');
-  const ref =
-    markerIndex >= 0 && path[markerIndex + 1] ? path[markerIndex + 1] : 'main';
+  let owner: string;
+  let repo: string;
+  let ref = 'main';
   let subdir = '';
-  if (markerIndex >= 0) {
-    subdir = path.slice(markerIndex + 2).join('/');
-  } else if (scmProvider === 'github') {
-    subdir = path.slice(2).join('/');
-  } else if (path.length > 2) {
-    subdir = path.at(-1) ?? '';
+  if (scmProvider === 'gitlab') {
+    const separatorIndex = path.findIndex(
+      (part, index) =>
+        part === '-' &&
+        (path[index + 1] === 'tree' || path[index + 1] === 'blob'),
+    );
+    if (separatorIndex >= 2) {
+      owner = path.slice(0, separatorIndex - 1).join('/');
+      repo = path[separatorIndex - 1];
+      const viewType = path[separatorIndex + 1];
+      ref = path[separatorIndex + 2] || 'main';
+      const suffix = path.slice(separatorIndex + 3);
+      subdir =
+        viewType === 'blob' ? suffix.slice(0, -1).join('/') : suffix.join('/');
+    } else {
+      // Without a tree/blob marker, GitLab URLs are project roots: the final
+      // path segment is the project and all preceding segments are its group.
+      owner = path.slice(0, -1).join('/');
+      repo = path[path.length - 1];
+    }
+  } else {
+    owner = path[0];
+    repo = path[1];
+    const markerIndex = path.findIndex(
+      (part, index) => index >= 2 && (part === 'tree' || part === 'blob'),
+    );
+    if (markerIndex >= 0) {
+      const viewType = path[markerIndex];
+      ref = path[markerIndex + 1] || 'main';
+      const suffix = path.slice(markerIndex + 2);
+      subdir =
+        viewType === 'blob' ? suffix.slice(0, -1).join('/') : suffix.join('/');
+    } else {
+      subdir = path.slice(2).join('/');
+    }
   }
 
   return { scmProvider, host: url.host, owner, repo, ref, subdir };
@@ -97,10 +130,17 @@ export async function fetchGitFileContentFromBackend(
         return { ok: false, reason: 'integration_auth' };
       }
     } catch {
-      // Keep non-JSON backend errors as the generic unavailable outcome.
+      // HTTP status still classifies errors with non-JSON responses.
     }
-    return { ok: false, reason: 'other' };
+
+    if (response.status === 401 || response.status === 403) {
+      return { ok: false, reason: 'access_denied' };
+    }
+    if (response.status === 404) {
+      return { ok: false, reason: 'not_found' };
+    }
+    return { ok: false, reason: 'unavailable' };
   } catch {
-    return { ok: false, reason: 'other' };
+    return { ok: false, reason: 'unavailable' };
   }
 }

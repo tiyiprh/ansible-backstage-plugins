@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { TestApiProvider } from '@backstage/test-utils';
 import userEvent from '@testing-library/user-event';
@@ -6,9 +6,12 @@ import { catalogApiRef } from '@backstage/plugin-catalog-react';
 import { scaffolderApiRef } from '@backstage/plugin-scaffolder-react';
 import {
   automationContentApiRef,
+  ContentApiError,
   type ArtifactContents,
+  type AutomationContentApi,
   type Enumeration,
   type ExecutionEnvironment,
+  type RegistrySyncResult,
 } from '../../api';
 import { EEDetailsPage } from './EEDetailsPage';
 
@@ -49,6 +52,169 @@ const image: ExecutionEnvironment = {
   enumeration: { status: 'partial', source: 'labels' },
   collections: [],
 };
+
+function renderSyncDetails(
+  initialContents: ArtifactContents,
+  refreshedContents: ArtifactContents,
+  reconcile: () => Promise<RegistrySyncResult>,
+) {
+  let reconciled = false;
+  const getContents = jest.fn(
+    async (_ref: string): Promise<ArtifactContents> =>
+      reconciled ? refreshedContents : initialContents,
+  );
+  const getExecutionEnvironment = jest.fn(
+    async (_ref: string): Promise<ExecutionEnvironment> => {
+      const inventory = reconciled ? refreshedContents : initialContents;
+      return {
+        ...image,
+        contentsKnown: inventory.enumeration.status !== 'unknown',
+        enumeration: inventory.enumeration,
+        counts: { collections: inventory.collections.length },
+        collections: inventory.collections,
+      };
+    },
+  );
+  const syncRegistry = jest.fn(async (_registry: string) => {
+    const result = await reconcile();
+    reconciled = true;
+    return result;
+  });
+  const api = {
+    getExecutionEnvironment,
+    getContents,
+    syncRegistry,
+  } satisfies Pick<
+    AutomationContentApi,
+    'getExecutionEnvironment' | 'getContents' | 'syncRegistry'
+  >;
+  render(
+    <TestApiProvider
+      apis={[
+        [automationContentApiRef, api],
+        [catalogApiRef, { getEntities: async () => ({ items: [] }) }],
+      ]}
+    >
+      <MemoryRouter
+        initialEntries={[`/${encodeURIComponent(image.ref)}?tab=collections`]}
+      >
+        <Routes>
+          <Route path=":ref" element={<EEDetailsPage />} />
+        </Routes>
+      </MemoryRouter>
+    </TestApiProvider>,
+  );
+  return { getContents, getExecutionEnvironment, syncRegistry };
+}
+
+const syncedContents: ArtifactContents = {
+  enumeration: { status: 'complete', source: 'build-time-manifest' },
+  collections: [
+    {
+      namespace: 'ansible',
+      name: 'posix',
+      fqcn: 'ansible.posix',
+      version: '2.2.2',
+      counts: { plugins: 23 },
+    },
+  ],
+  items: [],
+};
+
+it.each(['unknown', 'populated'] as const)(
+  'refreshes metadata and collections after syncing an initially %s inventory',
+  async initial => {
+    const initialContents: ArtifactContents =
+      initial === 'unknown'
+        ? {
+            enumeration: {
+              status: 'unknown',
+              source: 'external-introspection',
+            },
+            collections: [],
+            items: [],
+          }
+        : {
+            ...syncedContents,
+            collections: [
+              { ...syncedContents.collections[0], version: '1.0.0' },
+            ],
+          };
+    const api = renderSyncDetails(
+      initialContents,
+      syncedContents,
+      async () => ({
+        status: 'completed',
+        discovered: 1,
+        retainedPrevious: false,
+      }),
+    );
+    await screen.findByRole('heading', { name: 'repo' });
+    await waitFor(() => expect(api.getContents).toHaveBeenCalledTimes(1));
+    if (initial === 'populated') await screen.findByText('1.0.0');
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Actions for repo' }),
+    );
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Sync' }));
+    expect(await screen.findByText('Sync completed.')).toBeTruthy();
+    expect(await screen.findByText('2.2.2')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'ansible.posix' })).toBeTruthy();
+    await waitFor(() => {
+      expect(api.getContents).toHaveBeenCalledTimes(2);
+      expect(api.getExecutionEnvironment).toHaveBeenCalledTimes(2);
+    });
+    expect(api.getContents).toHaveBeenLastCalledWith(image.ref);
+    expect(api.syncRegistry).toHaveBeenCalledWith(image.registry);
+    expect(screen.queryByText('1.0.0')).toBeNull();
+  },
+);
+
+it('reports a resolved failed sync and refreshes the retained inventory without exposing backend errors', async () => {
+  const api = renderSyncDetails(syncedContents, syncedContents, async () => ({
+    status: 'failed',
+    discovered: 1,
+    retainedPrevious: true,
+    error: 'https://user:secret@registry.invalid',
+  }));
+  await screen.findByRole('link', { name: 'ansible.posix' });
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Actions for repo' }),
+  );
+  await userEvent.click(screen.getByRole('menuitem', { name: 'Sync' }));
+  expect(
+    await screen.findByText(
+      'Sync failed. Previously indexed content is still shown.',
+    ),
+  ).toBeTruthy();
+  await waitFor(() => expect(api.getContents).toHaveBeenCalledTimes(2));
+  expect(
+    await screen.findByRole('link', { name: 'ansible.posix' }),
+  ).toBeTruthy();
+  expect(screen.queryByText('Sync started.')).toBeNull();
+  expect(screen.queryByText('Sync completed.')).toBeNull();
+  expect(screen.queryByText(/secret/)).toBeNull();
+});
+
+it.each([
+  [403, 'Sync access needed for this registry.'],
+  [500, 'Unable to sync this registry.'],
+] as const)(
+  'keeps HTTP %s feedback separate from a completed sync',
+  async (status, copy) => {
+    const api = renderSyncDetails(syncedContents, syncedContents, async () => {
+      throw new ContentApiError(status, 'https://user:secret@registry.invalid');
+    });
+    await screen.findByRole('link', { name: 'ansible.posix' });
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Actions for repo' }),
+    );
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Sync' }));
+    expect(await screen.findByText(copy)).toBeTruthy();
+    expect(api.getContents).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('Sync completed.')).toBeNull();
+    expect(screen.queryByText(/secret/)).toBeNull();
+  },
+);
 
 it.each([
   ['registry/repo@sha256:one', image.enumeration, 'Approximate: 2 plugins'],

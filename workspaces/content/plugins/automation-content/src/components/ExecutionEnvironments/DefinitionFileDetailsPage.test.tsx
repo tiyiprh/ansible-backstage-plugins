@@ -1,11 +1,15 @@
 import type { Entity } from '@backstage/catalog-model';
-import type { ReactNode } from 'react';
-import { render, screen } from '@testing-library/react';
+import type { ReactElement, ReactNode } from 'react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
 import { TestApiProvider } from '@backstage/test-utils';
 import { catalogApiRef } from '@backstage/plugin-catalog-react';
-import { discoveryApiRef, fetchApiRef } from '@backstage/core-plugin-api';
+import {
+  discoveryApiRef,
+  fetchApiRef,
+  type FetchApi,
+} from '@backstage/core-plugin-api';
 import { DefinitionFileDetailsPage } from './DefinitionFileDetailsPage';
 import { EERoutesPage } from './EERoutesPage';
 
@@ -88,12 +92,17 @@ function definitionEntity(): Entity {
   };
 }
 
-function renderDetails(entity: Entity | undefined, localRoute = false) {
+function renderDetails(
+  entity: Entity | undefined,
+  localRoute = false,
+  fetchImplementation: FetchApi['fetch'] = async () =>
+    new Response(JSON.stringify({ error: 'not found' }), {
+      status: 404,
+      headers: { 'Content-Type': 'application/json' },
+    }),
+) {
   const getEntityByRef = jest.fn().mockResolvedValue(entity);
-  const fetch = jest.fn().mockResolvedValue({
-    ok: false,
-    json: async () => ({}),
-  });
+  const fetch = jest.fn(fetchImplementation);
   render(
     <TestApiProvider
       apis={[
@@ -156,16 +165,18 @@ it('reads absent inline README and definition through the catalog backend route'
     'ansible.io/scm-provider': 'github',
   };
   const getEntityByRef = jest.fn().mockResolvedValue(entity);
-  const fetch = jest.fn(async (input: RequestInfo | URL) => {
-    const url = new URL(String(input), 'https://backstage.example');
-    const contents = url.searchParams.get('filePath')?.endsWith('README.md')
-      ? '# README from source'
-      : 'version: 3\nimages:\n  base_image:\n    name: localhost:8445/demo/utopia-ee:latest';
-    return {
-      ok: true,
-      text: async () => contents,
-    };
-  });
+  const fetch = jest.fn(
+    async (
+      input: RequestInfo | URL,
+      _init?: RequestInit,
+    ): Promise<Response> => {
+      const url = new URL(String(input), 'https://backstage.example');
+      const contents = url.searchParams.get('filePath')?.endsWith('README.md')
+        ? '# README from source'
+        : 'version: 3\nimages:\n  base_image:\n    name: localhost:8445/demo/utopia-ee:latest';
+      return new Response(contents, { status: 200 });
+    },
+  );
   render(
     <TestApiProvider
       apis={[
@@ -193,6 +204,271 @@ it('reads absent inline README and definition through the catalog backend route'
   expect(fetch.mock.calls.map(([input]) => String(input)).join('\n')).toContain(
     '/ansible/git/file-content?',
   );
+});
+
+it('keeps inline README content when the optional definition fetch is denied', async () => {
+  const entity = definitionEntity();
+  entity.spec = {
+    type: 'execution-environment',
+    readme: '# Inline README stays visible',
+  };
+  entity.metadata.annotations = {
+    'backstage.io/source-location':
+      'url:https://github.com/ansible/networking-ee/tree/main',
+    'ansible.io/scm-provider': 'github',
+  };
+  const fetch = jest.fn(
+    async (_input: RequestInfo | URL, _init?: RequestInit): Promise<Response> =>
+      new Response('forbidden', { status: 403 }),
+  );
+
+  renderDetails(entity, false, fetch);
+
+  expect(
+    await screen.findByRole('heading', { name: 'Inline README stays visible' }),
+  ).toBeTruthy();
+  expect(
+    await screen.findByText(
+      'Access to the definition file in the source repository was denied. ' +
+        'Check your Ansible content and catalog access, then retry.',
+    ),
+  ).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+it('keeps inline definition content when the optional README fetch is denied', async () => {
+  const entity = definitionEntity();
+  entity.spec = {
+    type: 'execution-environment',
+    definition: validDefinitionYaml,
+  };
+  entity.metadata.annotations = {
+    'backstage.io/source-location':
+      'url:https://github.com/ansible/networking-ee/tree/main',
+    'ansible.io/scm-provider': 'github',
+  };
+  const fetch = jest.fn(
+    async (_input: RequestInfo | URL, _init?: RequestInit): Promise<Response> =>
+      new Response('forbidden', { status: 403 }),
+  );
+
+  renderDetails(entity, false, fetch);
+
+  expect(
+    await screen.findByText(
+      'Access to the README in the source repository was denied. ' +
+        'Check your Ansible content and catalog access, then retry.',
+    ),
+  ).toBeTruthy();
+  expect(screen.getByText('localhost:8445/demo/utopia-ee:latest')).toBeTruthy();
+  expect(screen.getByText('Collections (2)')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+it('shows a not-found state for source files that are genuinely absent', async () => {
+  const entity = definitionEntity();
+  entity.spec = { type: 'execution-environment' };
+  entity.metadata.annotations = {
+    'backstage.io/source-location':
+      'url:https://github.com/ansible/networking-ee/tree/main',
+    'ansible.io/scm-provider': 'github',
+  };
+  const fetch = jest.fn(
+    async (_input: RequestInfo | URL, _init?: RequestInit): Promise<Response> =>
+      new Response(JSON.stringify({ error: 'missing' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+  );
+
+  renderDetails(entity, false, fetch);
+
+  expect(
+    await screen.findByText(
+      'The README was not found in the source repository.',
+    ),
+  ).toBeTruthy();
+  expect(
+    screen.getByText(
+      'The definition file was not found in the source repository.',
+    ),
+  ).toBeTruthy();
+  expect(screen.getAllByRole('button', { name: 'Retry' })).toHaveLength(2);
+});
+
+it.each(['server', 'network'] as const)(
+  'offers retry when source files are unavailable (%s)',
+  async failure => {
+    const entity = definitionEntity();
+    entity.spec = { type: 'execution-environment' };
+    entity.metadata.annotations = {
+      'backstage.io/source-location':
+        'url:https://github.com/ansible/networking-ee/tree/main',
+      'ansible.io/scm-provider': 'github',
+    };
+    let recovered = false;
+    const fetch = jest.fn(
+      async (
+        input: RequestInfo | URL,
+        _init?: RequestInit,
+      ): Promise<Response> => {
+        if (!recovered) {
+          if (failure === 'network') throw new Error('network down');
+          return new Response('upstream error', { status: 500 });
+        }
+        const url = new URL(String(input), 'https://backstage.example');
+        return new Response(
+          url.searchParams.get('filePath')?.endsWith('README.md')
+            ? '# Recovered source README'
+            : validDefinitionYaml,
+          { status: 200 },
+        );
+      },
+    );
+
+    renderDetails(entity, false, fetch);
+
+    expect(
+      await screen.findAllByText(
+        'The source repository is unavailable right now.',
+      ),
+    ).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: 'Retry' })).toHaveLength(2);
+    recovered = true;
+    await userEvent.click(screen.getAllByRole('button', { name: 'Retry' })[0]);
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
+    expect(
+      await screen.findByRole('heading', { name: 'Recovered source README' }),
+    ).toBeTruthy();
+    expect(await screen.findByText('Collections (2)')).toBeTruthy();
+    expect(
+      screen.getByText('localhost:8445/demo/utopia-ee:latest'),
+    ).toBeTruthy();
+    expect(
+      screen.queryAllByText('The source repository is unavailable right now.'),
+    ).toHaveLength(0);
+    expect(screen.queryAllByRole('button', { name: 'Retry' })).toHaveLength(0);
+  },
+);
+
+it('keeps inline README visible when the optional definition fetch needs SCM authentication', async () => {
+  const entity = definitionEntity();
+  entity.spec = {
+    type: 'execution-environment',
+    readme: '# Inline README remains',
+  };
+  entity.metadata.annotations = {
+    'backstage.io/source-location':
+      'url:https://github.com/ansible/networking-ee/tree/main',
+    'ansible.io/scm-provider': 'github',
+  };
+  const fetch = jest.fn(
+    async (_input: RequestInfo | URL, _init?: RequestInit): Promise<Response> =>
+      new Response(JSON.stringify({ code: 'INTEGRATION_AUTH_FAILED' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+  );
+
+  renderDetails(entity, false, fetch);
+
+  expect(
+    await screen.findByRole('heading', { name: 'Inline README remains' }),
+  ).toBeTruthy();
+  expect(
+    await screen.findByText(
+      'SCM integration authentication failed. Check the configured GitHub ' +
+        'or GitLab credentials, then retry.',
+    ),
+  ).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
+});
+
+function NextDefinitionRoute(): ReactElement {
+  const navigate = useNavigate();
+  return (
+    <button onClick={() => navigate('/content/ee/catalog/platform/next-ee')}>
+      Show next definition
+    </button>
+  );
+}
+
+it('does not apply a delayed source response to a different catalog entity', async () => {
+  const firstEntity = definitionEntity();
+  firstEntity.spec = {
+    type: 'execution-environment',
+    definition: validDefinitionYaml,
+  };
+  firstEntity.metadata.annotations = {
+    'backstage.io/source-location':
+      'url:https://github.com/ansible/networking-ee/tree/main',
+    'ansible.io/scm-provider': 'github',
+  };
+  const nextEntity: Entity = {
+    ...definitionEntity(),
+    metadata: { name: 'next-ee', namespace: 'platform' },
+    spec: {
+      type: 'execution-environment',
+      readme: '# Next entity inline README',
+      definition: validDefinitionYaml,
+    },
+  };
+  let finishFetch: ((response: Response) => void) | undefined;
+  const pendingResponse = new Promise<Response>(resolve => {
+    finishFetch = resolve;
+  });
+  const getEntityByRef = jest.fn(async (ref: string) =>
+    ref.endsWith('/next-ee') ? nextEntity : firstEntity,
+  );
+  const fetch = jest.fn(
+    async (_input: RequestInfo | URL, _init?: RequestInit): Promise<Response> =>
+      pendingResponse,
+  );
+  render(
+    <TestApiProvider
+      apis={[
+        [catalogApiRef, { getEntityByRef }],
+        [discoveryApiRef, { getBaseUrl: async () => '/api/catalog' }],
+        [fetchApiRef, { fetch }],
+      ]}
+    >
+      <MemoryRouter initialEntries={['/content/ee/catalog/platform/team-ee']}>
+        <Routes>
+          <Route
+            path="/content/ee/catalog/:namespace/:name"
+            element={<DefinitionFileDetailsPage />}
+          />
+        </Routes>
+        <NextDefinitionRoute />
+      </MemoryRouter>
+    </TestApiProvider>,
+  );
+
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Show next definition' }),
+  );
+  expect(
+    await screen.findByRole('heading', { name: 'Next entity inline README' }),
+  ).toBeTruthy();
+  await act(async () => {
+    finishFetch?.(
+      new Response('# Stale README from previous entity', { status: 200 }),
+    );
+    await pendingResponse;
+    await Promise.resolve();
+  });
+
+  expect(
+    screen.queryByRole('heading', {
+      name: 'Stale README from previous entity',
+    }),
+  ).toBeNull();
+  expect(
+    screen.getByRole('heading', { name: 'Next entity inline README' }),
+  ).toBeTruthy();
 });
 
 it('shows unexpanded file references without implying their contents were read', async () => {
